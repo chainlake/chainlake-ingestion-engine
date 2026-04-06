@@ -158,61 +158,125 @@ E2 --> F2
 ```
 
 # Project Structure
-```text
+```bash
 blockchain-ingestion-engine/
-
-├── cmd/
-│   └── cli.py
-
-├── configs/
-│   ├── evm.yaml
-│   ├── bsc.yaml
-│   └── sui.yaml
-
-├── blockchain_ingestion/
-
-│   ├── core/
-│   │   ├── scheduler.py
-│   │   ├── fetcher.py
-│   │   ├── retry.py
-│   │   ├── ordering.py
-│   │   └── checkpoint.py
-
-│   ├── rpc/
+├── cli/                          # Command-line entry
+│   ├── backfill.py               # Historical batch import entry
+│   ├── realtime.py               # Real-time streaming entry
+│   ├── logs.py                   # Logs-specific entry
+│   └── benchmark.py              # Benchmarking tool
+│
+├── blockchain-ingestion/             # Main package
+│   │
+│   ├── adapters/                 # Chain adapter layer (core future extension layer)
 │   │   ├── evm/
+│   │   │   ├── rpc_adapter.py
+│   │   │   ├── parser.py
+│   │   │   └── schema.py
+│   │   │
 │   │   ├── sui/
-│   │   └── adapter_base.py
-
-│   ├── decoder/
-│   │   ├── block_decoder.py
-│   │   ├── tx_decoder.py
-│   │   └── log_decoder.py
-
-│   ├── producer/
-│   │   ├── kafka_async.py
-│   │   └── partitioner.py
-
-│   ├── state/
-│   │   ├── redis_buffer.py
-│   │   └── sequence_state.py
-
-│   ├── metrics/
-│   │   ├── prometheus.py
+│   │   │   ├── rpc_adapter.py
+│   │   │   ├── parser.py
+│   │   │   └── schema.py
+│   │   │
+│   │   ├── aptos/
+│   │   │   ├── rpc_adapter.py
+│   │   │   ├── parser.py
+│   │   │   └── schema.py
+│   │   │
+│   │   └── base.py               # Adapter abstract interface
+│   │
+│   ├── rpc/                      # RPC transport layer
+│   │   ├── erpc_client.py
+│   │   ├── async_client.py
+│   │   ├── retry.py
+│   │   ├── rate_limit.py
+│   │   └── timeout.py
+│   │
+│   ├── planner/                  # Block planning layer
+│   │   ├── range_planner.py
+│   │   ├── block_window.py
+│   │   └── stream_cursor.py
+│   │
+│   ├── runtime/                  # Async runtime core
+│   │   ├── engine.py             # Main runtime loop
+│   │   ├── scheduler.py          # Inflight task scheduler
+│   │   ├── dispatcher.py         # Range/task dispatch
+│   │   └── lifecycle.py          # Runtime lifecycle
+│   │
+│   ├── execution/                # Execution layer
+│   │   ├── fetcher.py            # Async fetch block/log/tx
+│   │   ├── parser_executor.py
+│   │   ├── ordered_buffer.py
+│   │   └── result_merger.py
+│   │
+│   ├── state/                    # State management layer
+│   │   ├── checkpoint.py
+│   │   ├── range_registry.py
+│   │   ├── cursor_store.py
+│   │   └── replay_state.py
+│   │
+│   ├── sinks/                    # Output layer
+│   │   ├── kafka/
+│   │   │   ├── producer.py
+│   │   │   ├── eos.py
+│   │   │   └── serializer.py
+│   │   │
+│   │   ├── storage/
+│   │   │   ├── parquet_writer.py
+│   │   │   ├── iceberg_writer.py
+│   │   │   └── clickhouse_writer.py
+│   │   │
+│   │   └── base.py
+│   │
+│   ├── metrics/                  # Full-stack monitoring
+│   │   ├── definitions.py
+│   │   ├── runtime.py
+│   │   ├── exporter.py
 │   │   └── tracing.py
-
-│   └── utils/
-
-├── tests/
-
-├── docker/
-
-├── deploy/
+│   │
+│   ├── models/                   # Domain model (unified schema)
+│   │   ├── block.py
+│   │   ├── transaction.py
+│   │   ├── log.py
+│   │   └── receipt.py
+│   │
+│   ├── utils/
+│   │   ├── logging.py
+│   │   ├── time.py
+│   │   └── misc.py
+│   │
+│   └── config/
+│       ├── settings.py
+│       ├── chain_config.py
+│       └── sink_config.py
+│
+├── deployments/                  # Deployment configurations
 │   ├── k8s/
+│   │   ├── realtime.yaml
+│   │   ├── backfill.yaml
+│   │   └── logs.yaml
+│   │
+│   ├── docker/
+│   │   └── Dockerfile
+│   │
 │   └── helm/
-
+│
+├── tests/
+│   ├── adapters/
+│   ├── runtime/
+│   ├── planner/
+│   ├── sinks/
+│   └── integration/
+│
 ├── scripts/
-
-└── README.md
+│   ├── local_run.sh
+│   ├── benchmark.sh
+│   └── smoke_test.sh
+│
+├── pyproject.toml
+├── README.md
+└── LICENSE
 ```
 
 # Core Features

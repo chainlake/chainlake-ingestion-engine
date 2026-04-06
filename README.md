@@ -309,7 +309,7 @@ Traditional ETL:
 - synchronous RPC
 - limited throughput
 
-Chainlake Ingestion Engine:
+Blockchain Ingestion Engine:
 - async-first
 - stream-native
 - backfill-optimized

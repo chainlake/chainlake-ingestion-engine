@@ -1,5 +1,5 @@
 [project]
-name = "chainlake-ingestion-engine"
+name = "blockchain-ingestion-engine"
 version = "0.1.0"
 description = "High-throughput blockchain ingestion engine for realtime streaming and historical backfill."
 authors = [

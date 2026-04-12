@@ -25,7 +25,7 @@ from rpcstream.adapters.evm.parser import (
 )
 
 RPC_URL = "http://localhost:30040/main/evm/56" # eRPC endpoint
-KAFKA_BROKER = "localhost:9092"
+KAFKA_BROKER = "localhost:30092"
 # Kafka Topics
 CHAIN = 'bsc'
 BLOCK_TOPIC = f"{CHAIN}.raw_blocks"

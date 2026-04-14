@@ -11,7 +11,7 @@ schema:
   entities: ["blocks", "transactions"]
 
 range:
-  start_block: 90000001
+  start_block: 90000091
   end_block: 90000100
 
 rpc:

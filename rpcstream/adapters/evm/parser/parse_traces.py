@@ -1,4 +1,4 @@
-from rpcstream.utils import hex_to_dec
+from rpcstream.utils.utils import hex_to_dec
 
 # trace (trace_block)
 def parse_trace_block(traces: list, block_number: int):

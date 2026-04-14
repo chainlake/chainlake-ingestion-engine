@@ -1,4 +1,4 @@
-from rpcstream.utils import hex_to_dec
+from rpcstream.utils.utils import hex_to_dec
 
 # receipt + logs(eth_getBlockReceipts)
 def parse_receipts(receipts: list):

@@ -1,40 +1,47 @@
 import asyncio
-import os
 
 from rpcstream.client.jsonrpc import JsonRpcClient
 from rpcstream.scheduler.adaptive import AdaptiveRpcScheduler
-from rpcstream.adapters.evm.rpc_requests import build_get_block_by_number
-
-from rpcstream.adapters.evm.identity.event_id_calculator import EventIdCalculator
-from rpcstream.adapters.evm.identity.event_time_calculator import EventTimeCalculator
-
-from confluent_kafka import Producer
 
 from rpcstream.ingestion.engine import IngestionEngine
 from rpcstream.ingestion.fetcher import RpcFetcher
 from rpcstream.ingestion.processor import EVMProcessor
 from rpcstream.sinks.kafka.producer import KafkaSink
 
-from rpcstream.adapters.evm.parser.parse_blocks import parse_blocks
-from rpcstream.adapters.evm.parser.parse_transactions import parse_transactions
+from rpcstream.adapters.evm.identity.event_id_calculator import EventIdCalculator
+from rpcstream.adapters.evm.identity.event_time_calculator import EventTimeCalculator
+from rpcstream.metrics.runtime import RuntimeMetrics
+from confluent_kafka import Producer
 
 
 RPC_URL = "http://localhost:30040/main/evm/56"
 KAFKA_BROKER = "localhost:30092"
 
-START_BLOCK = 90000099
-END_BLOCK = 90000100
+start_block = 90000099
+end_bloock = 90000100
 
 CHAIN = "bsc"
-BLOCK_TOPIC = f"{CHAIN}.raw_blocks"
-TRANSACTION_TOPIC = f"{CHAIN}.raw_transactions"
+
+TOPICS = {
+    "block": f"{CHAIN}.raw_blocks",
+    "transaction": f"{CHAIN}.raw_transactions",
+}
+
+
+def block_logger(block_number, latency, queue_wait, tx_count, payload_kb):
+    print(
+        f"[Block {block_number}] "
+        f"latency={latency:.2f}ms "
+        f"queue_wait={queue_wait:.2f}ms "
+        f"tx={tx_count} "
+        f"payload={payload_kb:.1f}KB"
+    )
 
 
 async def main():
+    metrics = RuntimeMetrics()
 
-    # -------------------------
-    # RPC Layer
-    # -------------------------
+    # ---------------- RPC ----------------
     client = JsonRpcClient(RPC_URL, timeout_sec=5)
 
     scheduler = AdaptiveRpcScheduler(
@@ -45,14 +52,10 @@ async def main():
 
     fetcher = RpcFetcher(scheduler)
 
-    # -------------------------
-    # Processor Layer
-    # -------------------------
+    # ---------------- Processor ----------------
     processor = EVMProcessor()
 
-    # -------------------------
-    # Kafka Layer
-    # -------------------------
+    # ---------------- Kafka ----------------
     producer = Producer({"bootstrap.servers": KAFKA_BROKER})
 
     kafka_sink = KafkaSink(
@@ -61,27 +64,20 @@ async def main():
         time_calculator=EventTimeCalculator(),
     )
 
-    # -------------------------
-    # Engine
-    # -------------------------
+    # ---------------- Engine ----------------
     engine = IngestionEngine(
         fetcher=fetcher,
         processor=processor,
         sink=kafka_sink,
-        topics={
-            "blocks": BLOCK_TOPIC,
-            "transactions": TRANSACTION_TOPIC
-        }
+        topics=TOPICS,
+        metrics=metrics,
+        concurrency=10,
+        logger=block_logger
     )
-    try:
-        # -------------------------
-        # RUN (batch or stream)
-        # -------------------------
-        await engine.run_batch(START_BLOCK, END_BLOCK)
 
-        print("Flushing Kafka...")
-        producer.flush(10)
-        
+    try:
+        await engine.run_batch(start_block, end_bloock)
+
     finally:
         await client.close()
 

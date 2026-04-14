@@ -5,12 +5,16 @@ from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.protobuf import ProtobufSerializer
 
 class KafkaSink:
-    def __init__(self, producer, id_calculator, time_calculator):
+    def __init__(self, producer, id_calculator, time_calculator, logger=None):
         self.producer = producer
         self.id_calc = id_calculator
         self.time_calc = time_calculator
+        self.logger = logger
 
     def send(self, topic, rows):
+        if self.logger:
+            self.logger.debug(f"[Kafka] Sending {len(rows)} rows → {topic}")
+            
         for r in rows:
             event_id = self.id_calc.calculate_event_id(r)
             if not event_id:

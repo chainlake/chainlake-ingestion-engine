@@ -1,0 +1,9 @@
+pipeline_type: "receipt"
+adapter_type: "evm"
+chain_id: "bsc"
+schemas: ["receipt", "log"]
+start_block: 90000001
+end_block: 90000100
+rpc_endpoint: "http://erpc-service.erpc.svc:4000/main/evm/56"
+kafka_broker: "redpanda.compute.svc:8082"
+kafka_schema_registry: "http://redpanda.compute.svc:8081"

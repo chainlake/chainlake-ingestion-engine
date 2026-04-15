@@ -6,7 +6,7 @@ from rpcstream.scheduler.adaptive import AdaptiveRpcScheduler
 from rpcstream.ingestion.engine import IngestionEngine
 from rpcstream.ingestion.fetcher import RpcFetcher
 from rpcstream.ingestion.processor import EVMProcessor
-from rpcstream.sinks.kafka.producer import KafkaSink
+from rpcstream.sinks.kafka.producer import KafkaWriter
 
 from rpcstream.adapters.evm.identity.event_id_calculator import EventIdCalculator
 from rpcstream.adapters.evm.identity.event_time_calculator import EventTimeCalculator
@@ -115,11 +115,12 @@ async def main():
     # -------------------------
     producer = Producer(build_kafka_config(config))
 
-    kafka_sink = KafkaSink(
+    kafka_write = KafkaWriter(
         producer=producer,
         id_calculator=EventIdCalculator(),
         time_calculator=EventTimeCalculator(),
         logger=logger,
+        config=config,
     )
 
     # -------------------------
@@ -128,7 +129,7 @@ async def main():
     engine = IngestionEngine(
         fetcher=fetcher,
         processor=processor,
-        sink=kafka_sink,
+        sink=kafka_write,
         topics=TOPICS,
         concurrency=config["engine"]["concurrency"],
         logger=logger,
@@ -141,7 +142,6 @@ async def main():
         )
 
     finally:
-        kafka_sink.flush()
         await client.close()
 
 

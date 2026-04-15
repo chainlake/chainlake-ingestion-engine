@@ -11,14 +11,14 @@ schema:
   entities: ["blocks", "transactions"]
 
 range:
-  start_block: 90000096
+  start_block: 90000001
   end_block: 90000100
 
 rpc:
   endpoint: "http://localhost:30040/main/evm/56"
   timeout_sec: 10
   inflight:
-    initial: 20
+    initial: 10
     max: 20
     target: 10000
 
@@ -40,5 +40,11 @@ kafka:
     linger_ms: 10
     batch_size: 65536
 
+  streaming:
+    batch_size: 100          # micro-batch size
+    flush_interval_ms: 10    # max wait time
+    queue_maxsize: 10000     # backpressure control
+
+
 log:
-  level: "info"
+  level: "debug"

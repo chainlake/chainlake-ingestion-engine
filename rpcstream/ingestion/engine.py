@@ -13,15 +13,17 @@ class IngestionEngine:
         self.logger = logger
 
     async def run_batch(self, start, end):
+        await self.sink.start()   # start async worker
+        
         tasks = [
             asyncio.create_task(self._run_one(block))
             for block in range(start, end + 1)
         ]
 
         await asyncio.gather(*tasks)
-
-        self.sink.flush()
-        
+       
+        await self.sink.close()   # graceful shutdown
+       
         self._print_summary()
 
     async def _run_one(self, block_number):
@@ -49,7 +51,7 @@ class IngestionEngine:
                     
                     # send to ALL DLQ topics (or choose one)
                     for entity in self.dlq_topics.keys():
-                        self._send_dlq(
+                        await self._send_dlq(
                             entity=entity,
                             block_number=block_number,
                             error=error_msg,
@@ -80,7 +82,8 @@ class IngestionEngine:
                     topic = self.topics.get(entity)
                     if not topic:
                         continue
-                    self.sink.send(topic, rows)
+                    
+                    await self.sink.send(topic, rows)
 
                 # -------------------------
                 # METRICS (RAW only)
@@ -128,7 +131,7 @@ class IngestionEngine:
                 
                 # send to all entities DLQ
                 for entity in self.dlq_topics.keys():
-                    self._send_dlq(
+                    await self._send_dlq(
                         entity=entity,
                         block_number=block_number,
                         error=error_msg,
@@ -139,7 +142,7 @@ class IngestionEngine:
                     self.metrics.record_error()
 
 
-    def _send_dlq(self, entity, block_number, error, stage):
+    async def _send_dlq(self, entity, block_number, error, stage):
         topic  = self.dlq_topics.get(entity)
 
         if not topic:
@@ -155,12 +158,12 @@ class IngestionEngine:
         payload = {
             "block": block_number,
             "entity": entity,
-            "pipeline": self.pipeline_type,
+            "pipeline": self.fetcher.pipeline_type,
             "stage": stage,
             "error": error,
         }
 
-        self.sink.send(dlq_topic, [payload])
+        await self.sink.send(topic, [payload])
 
         if self.logger:
             self.logger.warn(

@@ -12,8 +12,12 @@ class KafkaSink:
         self.logger = logger
 
     def send(self, topic, rows):
-        if self.logger:
-            self.logger.debug(f"[Kafka] Sending {len(rows)} rows → {topic}")
+        self.logger.info(
+            "kafka.send",
+            component="sink",
+            topic=topic,
+            batch_size=len(rows)
+        )
             
         for r in rows:
             event_id = self.id_calc.calculate_event_id(r)

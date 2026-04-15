@@ -11,10 +11,11 @@ tracer = trace.get_tracer("rpcstream.scheduler")
 
 
 class AdaptiveRpcScheduler(BaseScheduler):
-    def __init__(self, client: BaseClient, **kwargs):
+    def __init__(self, client: BaseClient, logger=None, **kwargs):
         super().__init__(**kwargs)
         self.client = client
-
+        self.logger = logger
+        
     # ----------------------------
     # Generic submit method for BaseRpcRequest
     # ----------------------------
@@ -29,10 +30,29 @@ class AdaptiveRpcScheduler(BaseScheduler):
         with tracer.start_as_current_span("scheduler.submit_request") as span:
             span.set_attribute("rpc.method", request.operation_name())
 
+            if self.logger and self.logger.isEnabledFor(10):  # DEBUG
+                self.logger.debug(
+                    "scheduler.enqueue",
+                    component="scheduler",
+                    method=request.operation_name(),
+                    inflight=self.inflight,
+                    window=self.current_limit,
+                )
+
             await self._acquire_slot()
 
             wait_ms = (time.time() - enqueue_ts) * 1000
             self._update_queue_wait(wait_ms)
+
+            if self.logger:
+                self.logger.debug(
+                    "scheduler.slot_acquired",
+                    component="scheduler",
+                    method=request.operation_name(),
+                    queue_wait_ms=round(wait_ms, 2),
+                    inflight=self.inflight,
+                    window=self.current_limit,
+                )
 
             submit_ts = time.time()
 
@@ -42,7 +62,7 @@ class AdaptiveRpcScheduler(BaseScheduler):
                 extra=request.meta.copy(),
             )
 
-            meta.extra["queue_wait_ms"] = wait_ms
+            meta.extra["queue_wait_ms"] = round(wait_ms, 2)
 
             span.set_attribute("scheduler.queue_wait_ms", round(wait_ms, 2))
             span.set_attribute("scheduler.window", self.current_limit)
@@ -61,6 +81,16 @@ class AdaptiveRpcScheduler(BaseScheduler):
 
                 span.set_attribute("scheduler.status", "ok")
                 span.set_attribute("scheduler.latency_ms", round(latency, 2))
+                
+                if self.logger:
+                    self.logger.info(
+                        "scheduler.request_success",
+                        component="scheduler",
+                        method=request.operation_name(),
+                        latency_ms=round(latency, 2),
+                        inflight=self.inflight,
+                        window=self.current_limit,
+                    )
 
                 return result, meta
 
@@ -75,12 +105,31 @@ class AdaptiveRpcScheduler(BaseScheduler):
                 span.set_attribute("scheduler.exception", str(exc))
                 span.set_attribute("scheduler.latency_ms", round(latency, 2))
 
+                if self.logger:
+                    self.logger.error(
+                        "scheduler.request_failed",
+                        component="scheduler",
+                        method=request.operation_name(),
+                        error=str(exc),
+                        inflight=self.inflight,
+                        window=self.current_limit,
+                    )
+
                 return RpcErrorResult(exc, meta)
 
             finally:
                 self._release_slot()
+                
+                if self.logger and self.logger.isEnabledFor(10):
+                    self.logger.debug(
+                        "scheduler.slot_released",
+                        component="scheduler",
+                        inflight=self.inflight,
+                        window=self.current_limit,
+                    )
 
     def _adjust_window(self, success):
+        prev = self.current_limit
         cur = self.current_limit
 
         increase_step = 1
@@ -92,24 +141,38 @@ class AdaptiveRpcScheduler(BaseScheduler):
                 self.min_inflight,
                 int(cur * strong_decrease_factor),
             )
-            return
-
-        latency = self.latency_ema or self.latency_target_ms
-
-        if latency > self.latency_target_ms * 3:
-            self.current_limit = max(
-                self.min_inflight,
-                int(cur * strong_decrease_factor),
-            )
-
-        elif latency > self.latency_target_ms:
-            self.current_limit = max(
-                self.min_inflight,
-                max(self.min_inflight, max(cur - 1, int(cur * mild_decrease_factor))), # smooth change
-            )
-
+            reason = "error"
         else:
-            self.current_limit = min(
-                self.max_inflight,
-                cur + increase_step,
+            latency = self.latency_ema or self.latency_target_ms
+
+            if latency > self.latency_target_ms * 3:
+                self.current_limit = max(
+                    self.min_inflight,
+                    int(cur * strong_decrease_factor),
+                )
+                reason = "high_latency_strong"
+
+            elif latency > self.latency_target_ms:
+                self.current_limit = max(
+                    self.min_inflight,
+                    max(cur - 1, int(cur * mild_decrease_factor)),
+                )
+                reason = "high_latency_mild"
+
+            else:
+                self.current_limit = min(
+                    self.max_inflight,
+                    cur + increase_step,
+                )
+                reason = "increase"
+
+        # log only when changed
+        if self.logger and self.current_limit != prev:
+            self.logger.info(
+                "scheduler.window_adjusted",
+                component="scheduler",
+                prev_window=prev,
+                new_window=self.current_limit,
+                reason=reason,
+                latency_ema_ms=round(self.latency_ema or 0, 2),
             )

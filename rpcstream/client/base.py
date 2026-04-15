@@ -13,15 +13,27 @@ class BaseClient(ABC):
     Base transport client with shared retry / metrics / tracing logic.
     """
 
-    def __init__(self, base_url: str, max_retries: int = 2):
+    def __init__(self, base_url: str, max_retries: int = 2, logger=None):
         self.base_url = base_url.rstrip("/")
         self.max_retries = max_retries
         self.metrics = ClientMetrics()
+        self.logger = logger
 
     async def execute(self, request):
         start = time.time()
         self.metrics.request_total += 1
         self.metrics.inflight += 1
+
+        method = request.method
+        
+        if self.logger:
+            self.logger.debug(
+                "client.rpc_request",
+                component="client",
+                rpc_url=self.base_url,
+                method=method,
+                params_preview=str(request.params)[:100]
+            )
 
         with tracer.start_as_current_span("rpc.execute") as span:
             span.set_attribute("rpc.url", self.base_url)
@@ -32,11 +44,28 @@ class BaseClient(ABC):
                         result = await self._execute(request, span)
                         self.metrics.request_success += 1
                         span.set_attribute("rpc.status", "ok")
+                        
+                        if self.logger:
+                            self.logger.info(
+                                "client.rpc_success",
+                                component="client",
+                                method=method,
+                                attempt=attempt,
+                            )
+                        
                         return result
 
                     except asyncio.TimeoutError:
                         self.metrics.timeout_total += 1
                         span.set_attribute("rpc.status", "timeout")
+
+                        if self.logger:
+                            self.logger.warn(
+                                "client.rpc_timeout",
+                                component="client",
+                                method=method,
+                                attempt=attempt,
+                            )
 
                         if attempt >= self.max_retries:
                             raise
@@ -48,6 +77,15 @@ class BaseClient(ABC):
                         self.metrics.transport_error_total += 1
                         span.set_attribute("rpc.error", str(exc))
 
+                        if self.logger:
+                            self.logger.warn(
+                                "client.rpc_transport_error",
+                                component="client",
+                                method=method,
+                                attempt=attempt,
+                                error=str(exc)
+                            )
+
                         if attempt >= self.max_retries:
                             raise
 
@@ -58,6 +96,15 @@ class BaseClient(ABC):
                 self.metrics.request_error += 1
                 span.set_attribute("rpc.status", "failed")
                 span.set_attribute("rpc.exception", str(exc))
+                
+                if self.logger:
+                    self.logger.error(
+                        "client.rpc_failed",
+                        component="client",
+                        method=method,
+                        error=str(exc)
+                    )
+                
                 raise
 
             finally:
@@ -70,6 +117,15 @@ class BaseClient(ABC):
 
                 self.metrics.inflight -= 1
                 span.set_attribute("rpc.latency_ms", round(latency, 2))
+                
+                if self.logger:
+                    self.logger.debug(
+                        "client.rpc_complete",
+                        component="client",
+                        method=method,
+                        latency_ms=round(latency, 2),
+                        inflight=self.metrics.inflight
+                    )
 
     @abstractmethod
     async def _execute(self, request, span):

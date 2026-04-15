@@ -17,8 +17,9 @@ class JsonRpcClient(BaseClient):
         pool_limit: int = 200,
         dns_ttl_sec: int = 300,
         max_retries: int = 0, # retry is handled by eRPC
+        logger=None,
     ):
-        super().__init__(base_url, max_retries=max_retries)
+        super().__init__(base_url, max_retries=max_retries, logger=logger)
 
         timeout = aiohttp.ClientTimeout(total=timeout_sec)
         connector = aiohttp.TCPConnector(
@@ -49,6 +50,14 @@ class JsonRpcClient(BaseClient):
 
         span.set_attribute("rpc.method", request.method)
 
+        if self.logger:
+            self.logger.debug(
+                "client.http_send",
+                component="client",
+                method=request.method,
+                payload_preview=str(payload)[:200]
+            )
+
         async with self.session.post(self.base_url, json=payload) as resp:
             resp.raise_for_status()
             raw = await resp.read()
@@ -58,7 +67,24 @@ class JsonRpcClient(BaseClient):
             self.metrics.rpc_error_total += 1
             span.set_attribute("rpc.status", "error")
             span.set_attribute("rpc.error", str(data["error"]))
+            
+            if self.logger:
+                self.logger.error(
+                    "client.rpc_response_error",
+                    component="client",
+                    method=request.method,
+                    error=str(data["error"])
+                )
+            
             raise RuntimeError(data["error"])
+
+        if self.logger:
+            self.logger.debug(
+                "client.rpc_response",
+                component="client",
+                method=request.method,
+                response_preview=str(data)[:200]
+            )
 
         return data["result"]
 

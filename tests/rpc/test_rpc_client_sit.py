@@ -2,7 +2,7 @@
 import asyncio
 import pytest
 from aiohttp import ClientConnectionError
-from rpcstream.rpc.rpc_client import RpcClient
+from rpcstream.client.jsonrpc import JsonRpcClient
 
 # -------------------------
 # config
@@ -16,7 +16,7 @@ TIMEOUT = 5  # seconds
 # -------------------------
 @pytest.mark.asyncio
 async def test_rpc_call_real_erpc():
-    client = RpcClient(base_url=RPC_URL, max_retries=2, timeout_sec=TIMEOUT)
+    client = JsonRpcClient(base_url=RPC_URL, max_retries=2, timeout_sec=TIMEOUT)
 
     result = await client.call("eth_blockNumber", [])
     
@@ -33,7 +33,7 @@ async def test_rpc_call_real_erpc():
 @pytest.mark.asyncio
 async def test_rpc_transport_error_sit():
     # simulate transport error
-    client = RpcClient(base_url="http://localhost:9999", max_retries=2, timeout_sec=1)
+    client = JsonRpcClient(base_url="http://localhost:9999", max_retries=2, timeout_sec=1)
 
     with pytest.raises(ClientConnectionError):
         await client.call("eth_getBlockByNumber", [])

@@ -17,8 +17,8 @@ range:
 rpc:
   endpoint: "http://localhost:30040/main/evm/56"
   inflight:
-    initial: 10
-    max: 20
+    initial: 5
+    max: 10
     timeout_sec: 5
 
 engine:
@@ -31,5 +31,4 @@ kafka:
     batch_size: 65536
 
 log:
-  name: "bsc_block_ingestion"
   level: "info"

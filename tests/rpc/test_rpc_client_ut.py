@@ -4,7 +4,7 @@ import asyncio
 import pytest
 from unittest.mock import patch, AsyncMock
 from aiohttp import ClientConnectionError
-from rpcstream.rpc.rpc_client import RpcClient
+from rpcstream.client.jsonrpc import JsonRpcClient
 
 
 # -------------------------
@@ -39,11 +39,11 @@ def make_mock_post_exception(exc: Exception):
 # -------------------------
 @pytest.mark.asyncio
 async def test_rpc_success():
-    client = RpcClient(base_url="http://fakeurl")
+    client = JsonRpcClient(base_url="http://fakeurl")
 
     mock_resp = make_mock_response()
     with patch.object(client.session, "post", return_value=mock_resp):
-        result = await client.call("eth_blockNumber", [])
+        result = await client.execute("eth_blockNumber", [])
         assert result == 42
 
 
@@ -52,7 +52,7 @@ async def test_rpc_success():
 # -------------------------
 @pytest.mark.asyncio
 async def test_rpc_timeout_retry():
-    client = RpcClient(base_url="http://fakeurl", max_retries=2)
+    client = JsonRpcClient(base_url="http://fakeurl", max_retries=2)
 
     mock_success = make_mock_response(b'{"jsonrpc":"2.0","result":99,"id":"1"}')
 
@@ -65,7 +65,7 @@ async def test_rpc_timeout_retry():
         return call
 
     with patch.object(client.session, "post", side_effect=side_effect):
-        result = await client.call("eth_blockNumber", [])
+        result = await client.execute("eth_blockNumber", [])
         assert result == 99
 
 
@@ -74,12 +74,12 @@ async def test_rpc_timeout_retry():
 # -------------------------
 @pytest.mark.asyncio
 async def test_rpc_error_response():
-    client = RpcClient(base_url="http://fakeurl")
+    client = JsonRpcClient(base_url="http://fakeurl")
 
     mock_resp = make_mock_response(b'{"jsonrpc":"2.0","error":"rpc failed","id":"1"}')
     with patch.object(client.session, "post", return_value=mock_resp):
         with pytest.raises(RuntimeError):
-            await client.call("eth_blockNumber", [])
+            await client.execute("eth_blockNumber", [])
 
 
 # -------------------------
@@ -87,12 +87,12 @@ async def test_rpc_error_response():
 # -------------------------
 @pytest.mark.asyncio
 async def test_latency_ema_update():
-    client = RpcClient(base_url="http://fakeurl")
+    client = JsonRpcClient(base_url="http://fakeurl")
 
     mock_resp = make_mock_response()
     with patch.object(client.session, "post", return_value=mock_resp):
         prev_ema = client.metrics.latency_ema_ms
-        await client.call("eth_blockNumber", [])
+        await client.execute("eth_blockNumber", [])
         assert client.metrics.latency_ema_ms != prev_ema
         
 
@@ -114,13 +114,13 @@ def mock_post(*args, **kwargs):
 # -------------------------
 @pytest.mark.asyncio
 async def test_transport_error_metrics():
-    client = RpcClient(base_url="http://fakeurl")
+    client = JsonRpcClient(base_url="http://fakeurl")
 
     with patch.object(client.session, "post", mock_post):
         import pytest
 
         with pytest.raises(ClientConnectionError):
-            await client.call("eth_blockNumber", [])
+            await client.execute("eth_blockNumber", [])
 
         # transport_error_total expected to be max_retries + 1
         expected = client.max_retries + 1
@@ -132,13 +132,13 @@ async def test_transport_error_metrics():
 # -------------------------
 @pytest.mark.asyncio
 async def test_max_retries_exhausted():
-    client = RpcClient(base_url="http://fakeurl", max_retries=2)
+    client = JsonRpcClient(base_url="http://fakeurl", max_retries=2)
 
     with patch.object(client.session, "post", mock_post):
         import pytest
 
         with pytest.raises(ClientConnectionError) as exc_info:
-            await client.call("eth_blockNumber", [])
+            await client.execute("eth_blockNumber", [])
 
         expected_attempts = client.max_retries + 1
         assert client.metrics.transport_error_total == expected_attempts

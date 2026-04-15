@@ -19,12 +19,25 @@ class RpcFetcher:
         elif self.pipeline_type == "trace":
             req = build_debug_trace_block(block_number)
 
-        if self.logger:
-            self.logger.debug(f"[Fetcher] Request block {block_number}")
+        # log before response
+        if self.logger and self.logger.isEnabledFor(10):
+            self.logger.debug(
+                "fetcher.request",
+                component="fetcher",
+                method="eth_getBlockByNumber",
+                block=block_number
+            )
 
         value, meta = await self.scheduler.submit_request(req)
    
-        if self.logger:
-            self.logger.debug(f"[Fetcher] Response block {block_number}")
+        # log after response
+        if self.logger and self.logger.isEnabledFor(10):
+            self.logger.info(
+                "fetcher.response",
+                component="fetcher",
+                method="eth_getBlockByNumber",
+                latency_ms=meta.extra.get("latency_ms"),
+                block=block_number
+            )
    
         return value, meta

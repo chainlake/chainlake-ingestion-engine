@@ -63,16 +63,36 @@ class IngestionEngine:
                 # LOGGING (entity agnostic)
                 # -------------------------
                 self.logger.info(
-                    f"[Block {block_number}] latency={latency:.2f}ms "
-                    f"queue_wait={queue_wait:.2f}ms"
+                    "engine.block_processed",
+                    component="engine",
+                    pipeline=self.fetcher.pipeline_type,
+                    block=block_number,
+                    latency_ms=latency,
+                    queue_wait_ms=queue_wait,
+                    # payload_kb=payload_kb
                 )
-
-                if self.logger.isEnabledFor(10):  # DEBUG
-                    preview = str(value)[:150]
-                    self.logger.debug(f"Raw RPC response: {preview}")
+                
+                if self.logger and self.logger.isEnabledFor(10):
+                    preview = str(value)[:200]
+                    self.logger.debug(
+                        "engine.block_processed",
+                        component="engine",
+                        pipeline=self.fetcher.pipeline_type,
+                        block=block_number,
+                        process_preview=preview
+                    )
 
             except Exception as e:
-                print(f"[Block {block_number}] ERROR: {e}")
+
+                if self.logger:
+                    self.logger.error(
+                        "engine.processor_error",
+                        component="engine",
+                        pipeline=self.fetcher.pipeline_type,
+                        block=block_number,
+                        error=str(e)
+                    )
+                
                 if self.metrics:
                     self.metrics.record_error()
 

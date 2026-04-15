@@ -15,7 +15,7 @@ from confluent_kafka import Producer
 
 from rpcstream.utils.config_loader import load_pipeline_config
 from rpcstream.utils.topic_builder import build_topic
-from rpcstream.utils.logger import get_logger
+from rpcstream.utils.logger import JsonLogger
 
 async def main():
     # -------------------------
@@ -23,7 +23,7 @@ async def main():
     # -------------------------
     config = load_pipeline_config("block_pipeline_backfill.yaml")
 
-    logger = get_logger(config["log"]["name"], config["log"]["level"])
+    logger = JsonLogger(level=config["log"]["level"])
     adapter_type = config["adapter"]["type"]
     pipeline_type = config["pipeline"]["type"]
     chain = config["adapter"]["chain"]
@@ -47,12 +47,18 @@ async def main():
     # -------------------------
     # RPC
     # -------------------------
-    client = JsonRpcClient(rpc_conf["endpoint"], timeout_sec=rpc_conf["inflight"]["timeout_sec"])
+    client = JsonRpcClient(
+        rpc_conf["endpoint"], 
+        timeout_sec=rpc_conf["inflight"]["timeout_sec"],
+        max_retries=0,
+        logger=logger
+        )
 
     scheduler = AdaptiveRpcScheduler(
         client,
         initial_inflight=rpc_conf["inflight"]["initial"],
         max_inflight=rpc_conf["inflight"]["max"],
+        logger=logger,
     )
 
     fetcher = RpcFetcher(scheduler, pipeline_type, logger)

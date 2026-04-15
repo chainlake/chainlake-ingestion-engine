@@ -19,19 +19,18 @@ from rpcstream.adapters.evm.rpc_requests import build_get_block_by_number
 
 from rpcstream.adapters.evm.parser import (
     parse_blocks,
-    parse_transactions,
-    parse_receipts
+    parse_transactions
 )
 
-RPC_URL = "http://localhost:30040/main/evm/56" # eRPC endpoint
-START_BLOCK = 90000091
-END_BLOCK = 90000099
+RPC_URL = "http://localhost:30041/main/evm/56" # eRPC endpoint
+START_BLOCK = 90000099
+END_BLOCK = 90000100
 BLOCK_BATCH_SIZE = 10
 INITIAL_CONCURRENT = 10
 MAX_INFLIGHT = 50
 
 # LOG LEVEL: debug / info / stats
-LOG_LEVEL = os.getenv("LOG_LEVEL", "info").lower()
+LOG_LEVEL = os.getenv("LOG_LEVEL", "debug").lower()
 
 
 def percentile(data, p):
@@ -126,8 +125,8 @@ async def main():
             block_row = parse_blocks(value)
             tx_rows = parse_transactions(value)
 
-            write_jsonl("output/blocks.jsonl", [block_row])
-            write_jsonl("output/transactions.jsonl", tx_rows)
+            # write_jsonl("output-error/blocks.jsonl", [block_row])
+            # write_jsonl("output-error/transactions.jsonl", tx_rows)
 
         except Exception as e:
             print(f"[Block {block_number}] parse error: {e}")

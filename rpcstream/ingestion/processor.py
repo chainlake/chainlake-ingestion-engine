@@ -8,28 +8,47 @@ class EVMProcessor:
 
     def __init__(self, logger=None):
         self.logger = logger
-        
-    def process(self, pipeline_type, block_number, value):
 
-        if self.logger:
-            self.logger.debug(f"[Processor] Parsing block {block_number}")
+    def process(self, pipeline_type, block_number, value):
 
         try:
             if pipeline_type == "block":
-                return self.process_block_pipeline(block_number, value)
+                result = self.process_block_pipeline(block_number, value)
 
             elif pipeline_type == "receipt":
-                return self.process_receipt_pipeline(block_number, value)
+                result = self.process_receipt_pipeline(block_number, value)
 
             elif pipeline_type == "trace":
-                return self.process_trace_pipeline(block_number, value)
+                result = self.process_trace_pipeline(block_number, value)
 
             else:
                 raise ValueError(f"Unknown pipeline: {pipeline_type}")
-        
+
+            # -------------------------
+            # LOG AFTER PROCESSING
+            # -------------------------
+            if self.logger and self.logger.isEnabledFor(10):
+                for entity, rows in result.items():
+                    self.logger.debug(
+                        "processor.success",
+                        component="processor",
+                        pipeline=pipeline_type,
+                        entity=entity,
+                        block=block_number,
+                        count=len(rows)
+                    )
+
+            return result
+
         except Exception as e:
             if self.logger:
-                self.logger.error(f"[Processor] ERROR block {block_number}: {e}")
+                self.logger.error(
+                    "processor.error",
+                    component="processor",
+                    pipeline=pipeline_type,
+                    block=block_number,
+                    error=str(e)
+                )
             raise
 
     # -------------------------

@@ -1,29 +1,47 @@
+import json
+import time
 import logging
-import sys
 
 
-def get_logger(name: str, level: str = "info"):
-    level_map = {
-        "debug": logging.DEBUG,
-        "info": logging.INFO,
-        "warn": logging.WARNING,
-        "error": logging.ERROR,
+class JsonLogger:
+    
+    LEVELS = {
+        "debug": 10,
+        "info": 20,
+        "warn": 30,
+        "error": 40,
     }
+    
+    def __init__(self, name="rpcstream", level="INFO"):
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(level.upper())
+        self.level = level.lower()
 
-    logger = logging.getLogger(name)
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter('%(message)s'))
+        self.logger.handlers = [handler]
 
-    if logger.handlers:
-        return logger  # avoid duplicate handlers
+    def isEnabledFor(self, level_num):
+        return level_num >= self.LEVELS[self.level]
 
-    logger.setLevel(level_map.get(level.lower(), logging.INFO))
+    def _log(self, level, message, **kwargs):
+        log = {
+            "level": level,
+            "time": int(time.time() * 1000),
+            "message": message,
+            **kwargs
+        }
 
-    handler = logging.StreamHandler(sys.stdout)
+        self.logger.log(getattr(logging, level.upper()), json.dumps(log))
 
-    formatter = logging.Formatter(
-        "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
-    )
+    def debug(self, message, **kwargs):
+        self._log("debug", message, **kwargs)
 
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+    def info(self, message, **kwargs):
+        self._log("info", message, **kwargs)
 
-    return logger
+    def warn(self, message, **kwargs):
+        self._log("warn", message, **kwargs)
+
+    def error(self, message, **kwargs):
+        self._log("error", message, **kwargs)

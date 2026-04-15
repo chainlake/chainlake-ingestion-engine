@@ -4,6 +4,7 @@ import asyncio
 from confluent_kafka import SerializingProducer
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.protobuf import ProtobufSerializer
+from collections import defaultdict
 
 class KafkaSink:
     def __init__(self, producer, id_calculator, time_calculator, logger):
@@ -148,11 +149,18 @@ class KafkaWriter:
     # Flush batch
     # ----------------------------
     def _flush_batch(self, buffer):
+        topic_counts = defaultdict(int)
+
+        # count per topic
+        for topic, _ in buffer:
+            topic_counts[topic] += 1
+
         if self.logger:
             self.logger.info(
                 "kafka.batch_send",
                 component="sink",
                 batch_size=len(buffer),
+                topics=dict(topic_counts),
             )
 
         for topic, r in buffer:

@@ -37,7 +37,7 @@ def build_kafka_config(config):
         "bootstrap.servers": kafka_cfg["bootstrap_servers"],
 
         # SASL config
-        "security.protocol": kafka_cfg["security"]["protocol"],
+        # "security.protocol": kafka_cfg["security"]["protocol"],
         "sasl.mechanism": kafka_cfg["security"]["mechanism"],
         "sasl.username": username,
         "sasl.password": password,
@@ -53,7 +53,7 @@ async def main():
     # -------------------------
     # LOAD YAML CONFIG
     # -------------------------
-    config = load_pipeline_config("block_pipeline_backfill.yaml")
+    config = load_pipeline_config("block_pipeline_backfill_local.yaml")
 
     logger = JsonLogger(level=config["log"]["level"])
     adapter_type = config["adapter"]["type"]

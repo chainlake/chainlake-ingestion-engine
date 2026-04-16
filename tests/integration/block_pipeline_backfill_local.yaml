@@ -8,7 +8,7 @@ adapter:
   network: "mainnet"
 
 schema:
-  entities: ["blocks", "transactions"]
+  entities: ["block", "transaction"]
 
 range:
   start_block: 90000001

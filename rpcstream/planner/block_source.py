@@ -36,7 +36,7 @@ class BackfillBlockSource(BlockSource):
 
     async def next_block(self):
         if self.current > self.end:
-            return None   # <-- IMPORTANT: signals completion
+            return None   # signals completion
 
         b = self.current
         self.current += 1

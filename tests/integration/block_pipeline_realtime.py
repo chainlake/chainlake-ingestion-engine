@@ -41,9 +41,9 @@ def build_kafka_config(config):
 
         # SASL config
         # "security.protocol": kafka_cfg["security"]["protocol"],
-        "sasl.mechanism": kafka_cfg["security"]["mechanism"],
-        "sasl.username": username,
-        "sasl.password": password,
+        # "sasl.mechanism": kafka_cfg["security"]["mechanism"],
+        # "sasl.username": username,
+        # "sasl.password": password,
 
         # producer tuning
         "linger.ms": kafka_cfg["producer"]["linger_ms"],

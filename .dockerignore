@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# virtual env
+.venv/
+venv/
+
+# git
+.git/
+.gitignore
+
+# logs / data
+logs/
+data/
+
+# tests / docs
+tests/
+docs/
+
+# local IDE
+.vscode/
+.idea/
+
+# docker
+docker-compose*.yml
+
+# uv / pip cache
+.cache/

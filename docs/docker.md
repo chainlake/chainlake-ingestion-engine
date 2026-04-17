@@ -1,8 +1,9 @@
 from repo root:
 
-docker build -f docker/Dockerfile -t ghcr.io/chainlake/rpcstream:uv .
-
-
+```bash
+docker build -f Dockerfile.dev -t ghcr.io/chainlake/rpcstream:v0.3 .
+docker build -t ghcr.io/chainlake/rpcstream:v0.3 .
+```
 ### Generate lockfile
 `uv pip compile pyproject.toml -o uv.lock`
 

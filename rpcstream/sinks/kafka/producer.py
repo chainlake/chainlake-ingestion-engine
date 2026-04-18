@@ -7,17 +7,15 @@ from confluent_kafka.schema_registry.protobuf import ProtobufSerializer
 from collections import defaultdict
         
 class KafkaWriter:
-    def __init__(self, producer, id_calculator, time_calculator, logger, config):
+    def __init__(self, producer, id_calculator, time_calculator, logger, stream_config):
         self.producer = producer
         self.id_calc = id_calculator
         self.time_calc = time_calculator
         self.logger = logger
 
-        streaming = config["kafka"].get("streaming", {})
-
-        self.batch_size = streaming.get("batch_size", 500)
-        self.flush_interval = streaming.get("flush_interval_ms", 50) / 1000
-        self.queue_maxsize = streaming.get("queue_maxsize", 10000)
+        self.batch_size = stream_config.batch_size
+        self.flush_interval = stream_config.flush_interval_ms / 1000
+        self.queue_maxsize = stream_config.queue_maxsize
 
         self.queue = asyncio.Queue(maxsize=self.queue_maxsize)
 

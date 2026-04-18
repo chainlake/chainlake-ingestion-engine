@@ -1,0 +1,20 @@
+profiles:
+  local:
+    security:
+      protocol: PLAINTEXT
+  aiven:
+    security:
+      protocol: SASL_SSL
+      mechanism: PLAIN
+    auth:
+      username_env: KAFKA_USERNAME
+      password_env: KAFKA_PASSWORD
+    ssl:
+      ca_path_env: KAFKA_CA_PATH
+  confluent:
+    security:
+      protocol: SASL_SSL
+      mechanism: PLAIN
+    auth:
+      username_env: KAFKA_API_KEY
+      password_env: KAFKA_API_SECRET

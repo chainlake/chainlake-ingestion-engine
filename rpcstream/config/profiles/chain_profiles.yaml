@@ -1,0 +1,360 @@
+version: "2.0"
+
+chains:
+
+# =========================
+# EVM CHAINS
+# =========================
+
+  - id: evm:1
+    meta:
+      chain_uid: evm:1
+      chain_name: ethereum
+      chain_full_name: Ethereum Mainnet
+      chain_type: evm
+      chain_category: evm
+      network: mainnet
+      ecosystem: eth
+
+    data:
+      primary_unit: block
+      unit_model: linear
+      cursor_type: integer
+
+      interval_seconds: 12
+
+      entities:
+        - block
+        - transaction
+        - log
+        - receipt
+        - trace
+
+    consensus:
+      finality: probabilistic
+      finality_blocks: 12
+      reorg_supported: true
+
+
+  - id: evm:56
+    meta:
+      chain_uid: evm:56
+      chain_name: bsc
+      chain_full_name: Binance Smart Chain
+      chain_type: evm
+      chain_category: evm
+      network: mainnet
+      ecosystem: bnb
+
+    data:
+      primary_unit: block
+      unit_model: linear
+      cursor_type: integer
+      interval_seconds: 0.45
+
+      entities:
+        - block
+        - transaction
+        - log
+        - receipt
+        - trace
+
+    consensus:
+      finality: probabilistic
+      finality_blocks: 15
+      reorg_supported: true
+
+
+  - id: evm:137
+    meta:
+      chain_uid: evm:137
+      chain_name: polygon
+      chain_full_name: Polygon Mainnet
+      chain_type: evm
+      chain_category: evm
+      network: mainnet
+      ecosystem: polygon
+
+    data:
+      primary_unit: block
+      unit_model: linear
+      cursor_type: integer
+      interval_seconds: 2.0
+
+      entities:
+        - block
+        - transaction
+        - log
+        - receipt
+        - trace
+
+    consensus:
+      finality: probabilistic
+      finality_blocks: 256
+      reorg_supported: true
+
+    execution:
+      parallelizable: true
+      ordering_required: false
+
+# =========================
+# L2 / ROLLUPS
+# =========================
+
+  - id: evm:42161
+    meta:
+      chain_uid: evm:42161
+      chain_name: arbitrum
+      chain_full_name: Arbitrum One
+      chain_type: evm
+      chain_category: l2
+      network: mainnet
+      ecosystem: arbitrum
+
+    data:
+      primary_unit: block
+      unit_model: linear
+      cursor_type: integer
+      interval_seconds: 0.25
+
+      entities:
+        - block
+        - transaction
+        - log
+        - receipt
+        - trace
+        - l1_batch
+
+    consensus:
+      finality: optimistic
+      finality_blocks: 1
+      reorg_supported: false
+
+
+  - id: evm:10
+    meta:
+      chain_uid: evm:10
+      chain_name: optimism
+      chain_full_name: Optimism Mainnet
+      chain_type: evm
+      chain_category: l2
+      network: mainnet
+      ecosystem: optimism
+
+    data:
+      primary_unit: block
+      unit_model: linear
+      cursor_type: integer
+      interval_seconds: 2.0
+
+      entities:
+        - block
+        - transaction
+        - log
+        - receipt
+        - trace
+        - l1_batch
+
+    consensus:
+      finality: optimistic
+      finality_blocks: 1
+      reorg_supported: false
+
+  
+# =========================
+# NON-EVM CHAINS
+# =========================
+  - id: sol:mainnet
+    meta:
+      chain_uid: sol:mainnet
+      chain_name: solana
+      chain_full_name: Solana Mainnet
+      chain_type: solana
+      chain_category: non-evm
+      network: mainnet
+      ecosystem: solana
+
+    data:
+      primary_unit: slot
+      unit_model: sparse
+      cursor_type: integer
+      interval_seconds: 0.45
+
+      entities:
+        - slot
+        - transaction
+        - account
+        - instruction
+        - log
+
+    consensus:
+      finality: fast
+      finality_blocks: 32
+      reorg_supported: false
+
+
+  - id: sui:mainnet
+    meta:
+      chain_uid: sui:mainnet
+      chain_name: sui
+      chain_full_name: Sui Mainnet
+      chain_type: sui
+      chain_category: non-evm
+      network: mainnet
+      ecosystem: sui
+
+    data:
+      primary_unit: checkpoint
+      unit_model: linear
+      cursor_type: integer
+      interval_seconds: 1.0
+
+      entities:
+        - checkpoint
+        - transaction
+        - object
+        - event
+
+    consensus:
+      finality: deterministic
+      finality_blocks: 1
+      reorg_supported: false
+
+
+  - id: aptos:mainnet
+    meta:
+      chain_uid: aptos:mainnet
+      chain_name: aptos
+      chain_full_name: Aptos Mainnet
+      chain_type: aptos
+      chain_category: non-evm
+      network: mainnet
+      ecosystem: aptos
+
+    data:
+      primary_unit: version
+      unit_model: linear
+      cursor_type: integer
+      interval_seconds: 0.2
+
+      entities:
+        - version
+        - transaction
+        - event
+        - write_set
+
+    consensus:
+      finality: deterministic
+      finality_blocks: 1
+      reorg_supported: false
+
+
+  - id: btc:mainnet
+    meta:
+      chain_uid: btc:mainnet
+      chain_name: bitcoin
+      chain_full_name: Bitcoin Mainnet
+      chain_type: utxo
+      chain_category: non-evm
+      network: mainnet
+      ecosystem: btc
+
+    data:
+      primary_unit: block
+      unit_model: linear
+      cursor_type: integer
+      interval_seconds: 600
+
+      entities:
+        - block
+        - transaction
+        - input
+        - output
+
+    consensus:
+      finality: probabilistic
+      finality_blocks: 6
+      reorg_supported: true
+
+
+  - id: cosmos:hub
+    meta:
+      chain_uid: cosmos:cosmoshub-4
+      chain_name: cosmoshub
+      chain_full_name: Cosmos Hub
+      chain_type: cosmos
+      chain_category: non-evm
+      network: mainnet
+      ecosystem: cosmos
+
+    data:
+      primary_unit: block
+      unit_model: linear
+      cursor_type: string
+      interval_seconds: 6
+
+      entities:
+        - block
+        - transaction
+        - event
+
+    consensus:
+      finality: deterministic
+      finality_blocks: 1
+      reorg_supported: false
+
+
+  - id: near:mainnet
+    meta:
+      chain_uid: near:mainnet
+      chain_name: near
+      chain_full_name: Near Protocol
+      chain_type: near
+      chain_category: non-evm
+      network: mainnet
+      ecosystem: near
+
+    data:
+      primary_unit: block
+      unit_model: hierarchical
+      cursor_type: integer
+      interval_seconds: 1.2
+
+      entities:
+        - block
+        - shard
+        - transaction
+        - receipt
+
+    consensus:
+      finality: fast
+      finality_blocks: 2
+      reorg_supported: false
+
+
+  - id: avax:cchain
+    meta:
+      chain_uid: avax:cchain
+      chain_name: avalanche
+      chain_full_name: Avalanche C-Chain
+      chain_type: evm
+      chain_category: evm
+      network: mainnet
+      ecosystem: avalanche
+
+    data:
+      primary_unit: block
+      unit_model: dag
+      cursor_type: integer
+      interval_seconds: 2.0
+
+      entities:
+        - block
+        - transaction
+        - log
+        - receipt
+
+    consensus:
+      finality: fast
+      finality_blocks: 1
+      reorg_supported: false

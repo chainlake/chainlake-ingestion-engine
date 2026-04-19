@@ -5,7 +5,17 @@ from confluent_kafka import SerializingProducer
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.protobuf import ProtobufSerializer
 from collections import defaultdict
-        
+
+from rpcstream.metrics.kafka import (
+    QUEUE_SIZE,
+    BATCH_COUNTER,
+    BATCH_LATENCY,
+    MESSAGE_COUNTER,
+    BUFFER_RETRY_COUNTER,
+    DELIVERY_SUCCESS,
+    DELIVERY_ERROR,
+)
+
 class KafkaWriter:
     def __init__(self, producer, id_calculator, time_calculator, logger, stream_config):
         self.producer = producer
@@ -27,6 +37,7 @@ class KafkaWriter:
     # ----------------------------
     def delivery_report(self, err, msg):
         if err:
+            DELIVERY_ERROR.add(1, {"topic": msg.topic()})
             self.logger.error(
                 "kafka.delivery_failed",
                 component="sink",
@@ -34,6 +45,7 @@ class KafkaWriter:
                 error=str(err),
             )
         else:
+            DELIVERY_SUCCESS.add(1, {"topic": msg.topic()})
             self.logger.debug(
                 "kafka.delivery_success",
                 component="sink",
@@ -57,6 +69,7 @@ class KafkaWriter:
             )
 
         await asyncio.wait_for(self.queue.put((topic, rows)), timeout=1) # batch enqueue, Apply backpressure to engine
+        QUEUE_SIZE.add(self.queue.qsize(), {"topic": topic})
 
     # ----------------------------
     # Worker loop
@@ -110,8 +123,12 @@ class KafkaWriter:
                 batch_size=len(buffer),
                 topics=dict(topic_counts),
             )
-
+            
+        start = time.time()
+        BATCH_COUNTER.add(1)
+        
         for topic, r in buffer:
+            MESSAGE_COUNTER.add(1, {"topic": topic})
             event_id = self.id_calc.calculate_event_id(r)
             
             # fallback for DLQ / unknown schema
@@ -134,7 +151,9 @@ class KafkaWriter:
                         callback=self.delivery_report,
                     )
                     break
+                
                 except BufferError:
+                    BUFFER_RETRY_COUNTER.add(1, {"topic": topic})
                     retries += 1
                     if retries > 100:
                         raise RuntimeError("Kafka producer stuck")
@@ -144,6 +163,8 @@ class KafkaWriter:
 
         # trigger delivery callbacks
         self.producer.poll(0)
+        latency = (time.time() - start) * 1000
+        BATCH_LATENCY.record(latency)
         
     # ----------------------------
     # Lifecycle

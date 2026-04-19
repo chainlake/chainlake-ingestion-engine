@@ -17,10 +17,15 @@ from rpcstream.adapters.evm.identity.event_time_calculator import EventTimeCalcu
 
 from rpcstream.planner.block_source import RealtimeBlockSource
 from rpcstream.runtime.block_tracker import BlockHeadTracker
+from rpcstream.runtime.telemetry import init_telemetry
 
 from rpcstream.utils.logger import JsonLogger
 
+
 async def main():
+    # initialize telemetry
+    init_telemetry()
+    
     # Load config(typed)
     config = load_pipeline_config("block_pipeline_realtime.yaml")
     

@@ -28,7 +28,7 @@ class AdaptiveRpcScheduler(BaseScheduler):
         enqueue_ts = time.time()
 
         with tracer.start_as_current_span("scheduler.submit_request") as span:
-            span.set_attribute("rpc.method", request.operation_name())
+            span.set_attribute("scheduler.method", request.operation_name())
 
             if self.logger and self.logger.isEnabledFor(10):  # DEBUG
                 self.logger.debug(

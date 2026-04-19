@@ -35,7 +35,7 @@ class BaseClient(ABC):
                 params_preview=str(request.params)[:100]
             )
 
-        with tracer.start_as_current_span("rpc.execute") as span:
+        with tracer.start_as_current_span("client.execute_request") as span:
             span.set_attribute("rpc.url", self.base_url)
 
             try:
@@ -43,7 +43,10 @@ class BaseClient(ABC):
                     try:
                         result = await self._execute(request, span)
                         self.metrics.request_success += 1
+                        
                         span.set_attribute("rpc.status", "ok")
+                        span.set_attribute("rpc.method", method)
+                        span.set_attribute("rpc.retry_count", attempt)
                         
                         if self.logger and self.logger.isEnabledFor(10):
                             self.logger.debug(

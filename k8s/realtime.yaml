@@ -28,7 +28,7 @@ spec:
       terminationGracePeriodSeconds: 1 # EOS is maintained by state topic
       containers:
         - name: ingestion-pipeline
-          image: ghcr.io/chainlake/rpcstream:v0.1.3
+          image: ghcr.io/chainlake/rpcstream:v0.1.4
           imagePullPolicy: IfNotPresent
           command: ["python", "block_pipeline_realtime.py"]
 

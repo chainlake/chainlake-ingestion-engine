@@ -1,23 +1,33 @@
+logLevel: info
+
 pipeline:
   type: "block"
+  mode: "realtime"
 
-adapter:
+chain:
+  uid: "evm:56"
   type: "evm"
-  chain: "bsc"
+  name: bsc
   network: "mainnet"
-  chain_id: "56"
 
-schema:
-  entities: ["block", "transaction"]
+entities:
+  - "block"
+  - "transaction"
 
-rpc:
+erpc:
   project_id: main
-  endpoint: "http://erpc-service.erpc.svc:4000/main/evm/56"
+  base_url: http://erpc-service.erpc.svc:4000 # endpoint: "http://erpc-service.erpc.svc:4000/main/evm/56"
   timeout_sec: 10
+  max_retries: 1
   inflight:
-    initial: 5
-    max: 10
-    target: 1000
+    min_inflight: 5
+    max_inflight: 10
+    initial_inflight: 5
+    latency_target_ms: 1000
+
+tracker:
+  # polling interval is based on the specific Chain
+  poll_interval: 0.4
 
 engine:
   # concurrency for parallel processing and sink
@@ -26,25 +36,14 @@ engine:
   concurrency: 10
 
 kafka:
-  bootstrap_servers: "redpanda.compute.svc:9092"
-
-  security:
-    # protocol: "SASL_SSL"
-    mechanism: "PLAIN"
-
-  auth:
-    username_env: "KAFKA_USERNAME"
-    password_env: "KAFKA_PASSWORD"
-
+  profile: local   # local | k8s | aiven | msk | confluent
+  common:
+    bootstrap_servers: "redpanda.compute.svc:9092"
+    topic_template: "{type}.{chain}.{network}.{kind}_{entity}"
   producer:
     linger_ms: 10
     batch_size: 65536
-
   streaming:
     batch_size: 100          # micro-batch size
     flush_interval_ms: 20    # max wait time
     queue_maxsize: 100       # backpressure control
-
-
-log:
-  level: "info"

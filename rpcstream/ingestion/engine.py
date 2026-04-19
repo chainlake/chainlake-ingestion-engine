@@ -24,29 +24,39 @@ class IngestionEngine:
         self.semaphore = asyncio.Semaphore(concurrency)
         self.logger = logger
 
+
     async def run_stream(self, block_source):
         await self.sink.start()
 
-        async def worker(block):
-            try:
-                await self._run_one(block)
-            finally:
-                self.semaphore.release()
+        queue = asyncio.Queue(maxsize=1000)
 
-        tasks = []
-
-        try:
+        async def producer():
             while True:
                 block = await block_source.next_block()
                 if block is None:
                     break
+                await queue.put(block)
 
-                await self.semaphore.acquire()
-                tasks.append(asyncio.create_task(worker(block)))
+            # signal shutdown
+            for _ in range(self.semaphore._value):
+                await queue.put(None)
 
-        finally:
-            await asyncio.gather(*tasks)
-            await self.sink.close()   
+        async def worker():
+            while True:
+                block = await queue.get()
+                if block is None:
+                    break
+                await self._run_one(block)
+
+        workers = [
+            asyncio.create_task(worker())
+            for _ in range(self.semaphore._value)
+        ]
+
+        await producer()
+        await asyncio.gather(*workers)
+        await self.sink.close()
+
 
     async def _run_one(self, block_number):
         try:
@@ -137,7 +147,7 @@ class IngestionEngine:
             )
             
             if self.logger and self.logger.isEnabledFor(10):
-                preview = str(value)[:200]
+                preview = f"type={type(value)} size={len(value) if hasattr(value,'__len__') else 'NA'}"
                 self.logger.debug(
                     "engine.block_processed",
                     component="engine",

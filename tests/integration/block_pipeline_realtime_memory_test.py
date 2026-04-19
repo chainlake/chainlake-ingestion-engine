@@ -20,15 +20,61 @@ from rpcstream.runtime.block_tracker import BlockHeadTracker
 
 from rpcstream.utils.logger import JsonLogger
 
+# -------------------------
+# Mememory Leak Detection
+# -------------------------
+import tracemalloc
+import asyncio
+import time
+import objgraph
+
+async def object_monitor(logger, interval=60):
+    while True:
+        await asyncio.sleep(interval)
+
+        growth = objgraph.show_growth(limit=10)
+        logger.info(f"[OBJ GROWTH] {growth}")
+
+
+def log_memory(stage, logger):
+    current, peak = tracemalloc.get_traced_memory()
+    logger.info(f"[MEM][{stage}] current={current/1024/1024:.2f}MB peak={peak/1024/1024:.2f}MB")
+    
+
+async def memory_monitor(logger, interval=30):
+    prev_snapshot = tracemalloc.take_snapshot()
+
+    while True:
+        await asyncio.sleep(interval)
+
+        snapshot = tracemalloc.take_snapshot()
+        top_stats = snapshot.compare_to(prev_snapshot, 'lineno')
+
+        logger.info("==== Memory diff (top 10) ====")
+
+        for stat in top_stats[:10]:
+            logger.info(str(stat))
+
+        current, peak = tracemalloc.get_traced_memory()
+        logger.info(f"[MEM] current={current/1024/1024:.2f}MB peak={peak/1024/1024:.2f}MB")
+
+        prev_snapshot = snapshot
+
+
 async def main():
     # Load config(typed)
-    config = load_pipeline_config("block_pipeline_realtime.yaml")
+    config = load_pipeline_config("bsc_block_transaction_ingestion.yaml")
     
     # Resolve config
     runtime = resolve(config)
     logger = JsonLogger(level=config.logLevel)
     main_topics, dlq_topics = runtime.topic_map
     rpc_conf = config.erpc
+
+
+    tracemalloc.start(25)  # keep 25 frames for deep tracing
+    monitor_task = asyncio.create_task(memory_monitor(logger, interval=60))
+    obj_task = asyncio.create_task(object_monitor(logger, interval=60))
 
     try:
 
@@ -103,6 +149,7 @@ async def main():
         block_source = RealtimeBlockSource(tracker)
         
         await engine.run_stream(block_source)
+        log_memory("after_sink", logger)
         
     finally:
         await tracker.stop()

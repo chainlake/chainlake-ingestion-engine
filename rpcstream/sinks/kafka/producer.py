@@ -46,6 +46,7 @@ class KafkaWriter:
     # Public API (NON-BLOCKING)
     # ----------------------------
     async def send(self, topic, rows):
+        
         if self.logger:
             self.logger.debug(
                 "kafka.enqueue",
@@ -55,8 +56,7 @@ class KafkaWriter:
                 queue_size=self.queue.qsize(),
             )
 
-        for r in rows:
-            await asyncio.wait_for(self.queue.put((topic, r)), timeout=1) # Apply backpressure to engine
+        await asyncio.wait_for(self.queue.put((topic, rows)), timeout=1) # batch enqueue, Apply backpressure to engine
 
     # ----------------------------
     # Worker loop
@@ -71,10 +71,12 @@ class KafkaWriter:
                     self.queue.get(),
                     timeout=self.flush_interval
                 )
-                buffer.append(item)
-
             except asyncio.TimeoutError:
-                pass
+                item = None
+
+            if item:
+                topic, rows = item
+                buffer.extend((topic, r) for r in rows)
 
             now = time.time()
 
@@ -82,16 +84,19 @@ class KafkaWriter:
                 len(buffer) >= self.batch_size or
                 (now - last_flush) >= self.flush_interval
             ):
-                self._flush_batch(buffer)
+                await self._flush_batch(buffer)
                 buffer.clear()
                 last_flush = now
 
             self.producer.poll(0)
 
+            # 🔥 critical for fairness
+            await asyncio.sleep(0)
+
     # ----------------------------
     # Flush batch
     # ----------------------------
-    def _flush_batch(self, buffer):
+    async def _flush_batch(self, buffer):
         topic_counts = defaultdict(int)
 
         # count per topic
@@ -114,15 +119,28 @@ class KafkaWriter:
                 event_id = f"dlq-{r.get('block')}-{time.time_ns()}"
 
             r["id"] = event_id
-            r["event_timestamp"] = self.time_calc.calculate_event_timestamp(r)
+            # r["event_timestamp"] = self.time_calc.calculate_event_timestamp(r)
             r["ingest_timestamp"] = self.time_calc.calculate_ingest_timestamp()
 
-            self.producer.produce(
-                topic=topic,
-                key=event_id,
-                value=json.dumps(r),
-                callback=self.delivery_report,
-            )
+            payload = json.dumps(r, separators=(",", ":"))
+
+            retries = 0
+            while True:
+                try:
+                    self.producer.produce(
+                        topic=topic,
+                        key=event_id,
+                        value=payload,
+                        callback=self.delivery_report,
+                    )
+                    break
+                except BufferError:
+                    retries += 1
+                    if retries > 100:
+                        raise RuntimeError("Kafka producer stuck")
+                    # 🔥 backpressure from Kafka (avoid: BufferError: Local: Queue full)
+                    self.producer.poll(0.1)
+                    await asyncio.sleep(0.01)  # yield to event loop, prevents CPU spinning
 
         # trigger delivery callbacks
         self.producer.poll(0)

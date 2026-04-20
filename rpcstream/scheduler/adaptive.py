@@ -30,7 +30,7 @@ class AdaptiveRpcScheduler(BaseScheduler):
         with tracer.start_as_current_span("scheduler.submit_request") as span:
             span.set_attribute("scheduler.method", request.operation_name())
 
-            if self.logger and self.logger.isEnabledFor(10):  # DEBUG
+            if self.logger:  # DEBUG
                 self.logger.debug(
                     "scheduler.enqueue",
                     component="scheduler",
@@ -44,7 +44,7 @@ class AdaptiveRpcScheduler(BaseScheduler):
             wait_ms = (time.time() - enqueue_ts) * 1000
             self._update_queue_wait(wait_ms)
 
-            if self.logger and self.logger.isEnabledFor(10) :
+            if self.logger:
                 self.logger.debug(
                     "scheduler.slot_acquired",
                     component="scheduler",
@@ -82,7 +82,7 @@ class AdaptiveRpcScheduler(BaseScheduler):
                 span.set_attribute("scheduler.status", "ok")
                 span.set_attribute("scheduler.latency_ms", round(latency, 2))
                 
-                if self.logger and self.logger.isEnabledFor(10):
+                if self.logger:
                     self.logger.debug(
                         "scheduler.request_success",
                         component="scheduler",
@@ -122,7 +122,7 @@ class AdaptiveRpcScheduler(BaseScheduler):
             finally:
                 self._release_slot()
                 
-                if self.logger and self.logger.isEnabledFor(10):
+                if self.logger:
                     self.logger.debug(
                         "scheduler.slot_released",
                         component="scheduler",
@@ -169,7 +169,7 @@ class AdaptiveRpcScheduler(BaseScheduler):
                 reason = "increase"
 
         # log only when changed
-        if self.logger and self.current_limit != prev and self.logger.isEnabledFor(10):
+        if self.logger and self.current_limit != prev:
             self.logger.debug(
                 "scheduler.window_adjusted",
                 component="scheduler",

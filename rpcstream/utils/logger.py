@@ -35,6 +35,8 @@ class JsonLogger:
         self.logger.log(getattr(logging, level.upper()), json.dumps(log))
 
     def debug(self, message, **kwargs):
+        if not self.logger.isEnabledFor(logging.DEBUG):
+            return
         self._log("debug", message, **kwargs)
 
     def info(self, message, **kwargs):

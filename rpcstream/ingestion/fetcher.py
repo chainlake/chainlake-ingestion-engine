@@ -39,7 +39,7 @@ class RpcFetcher:
         result = await self.scheduler.submit_request(req)
    
         # log after response
-        if self.logger and self.logger.isEnabledFor(10):
+        if self.logger:
             self.logger.debug(
                 "fetcher.response",
                 component="fetcher",

@@ -158,7 +158,7 @@ class IngestionEngine:
             
 
             
-            if self.logger and self.logger.isEnabledFor(10):
+            if self.logger:
                 preview = f"type={type(value)} size={len(value) if hasattr(value,'__len__') else 'NA'}"
                 self.logger.debug(
                     "engine.data_processed",

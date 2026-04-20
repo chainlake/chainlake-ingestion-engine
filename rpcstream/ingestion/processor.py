@@ -27,7 +27,7 @@ class EVMProcessor:
             # -------------------------
             # LOG AFTER PROCESSING
             # -------------------------
-            if self.logger and self.logger.isEnabledFor(10):
+            if self.logger:
                 for entity, rows in result.items():
                     self.logger.debug(
                         "processor.success",

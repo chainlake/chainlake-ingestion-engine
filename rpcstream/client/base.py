@@ -32,7 +32,7 @@ class BaseClient(ABC):
         REQUEST_SUBMITTED_COUNTER.add(1, {"method": method})
         INFLIGHT_GAUGE.add(1)
         
-        if self.logger and self.logger.isEnabledFor(10):
+        if self.logger:
             self.logger.debug(
                 "rpc.request",
                 component="client",
@@ -57,7 +57,7 @@ class BaseClient(ABC):
                         span.set_attribute("rpc.retry_count", attempt)
                         span.set_attribute("rpc.system", "jsonrpc")
                         
-                        if self.logger and self.logger.isEnabledFor(10):
+                        if self.logger:
                             self.logger.debug(
                                 "rpc.success",
                                 component="client",

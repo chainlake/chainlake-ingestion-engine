@@ -23,11 +23,19 @@ class EventTimeCalculator:
 
         return self._to_rfc3339(ts)
 
+
     def calculate_ingest_timestamp(self):
         """
         System ingestion time
         """
-        return datetime.utcnow().isoformat() + "Z"
+        # Get current UTC time and convert to Unix timestamp in seconds
+        timestamp_seconds = datetime.utcnow().timestamp()
+        
+        # Convert to milliseconds
+        timestamp_milliseconds = int(timestamp_seconds * 1000)
+        
+        return timestamp_milliseconds
+
 
     def _to_rfc3339(self, ts):
         return datetime.utcfromtimestamp(int(ts)).isoformat() + "Z"

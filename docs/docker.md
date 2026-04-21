@@ -25,10 +25,10 @@ Dockerfile build:
 docker build -t rpcstream:dev .
 
 # 2. export
-docker save rpcstream:dev -o .rpcstream.tar
+docker save rpcstream:dev -o rpcstream.tar
 
 # 3. import
-sudo k3s ctr images import .rpcstream.tar
+sudo k3s ctr images import rpcstream.tar
 
 # 4. restart pod
 kubectl rollout restart deployment bsc-ingestion-block

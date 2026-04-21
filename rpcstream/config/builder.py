@@ -8,7 +8,7 @@ def build_kafka_config(cfg: PipelineConfig) -> dict:
     common = kafka.common
 
     result = {
-        "bootstrap.servers": common.bootstrap_servers
+         "bootstrap.servers": os.getenv("KAFKA_BOOTSTRAP_SERVERS", common.bootstrap_servers),  # Use env var if set
     }
 
     # -------------------------

@@ -158,7 +158,6 @@ class IngestionEngine:
                     block=block_number,
                     latency_ms=latency,
                     ingestion_lag=ingestion_lag,
-                    latest_block=latest_block,
                     queue_wait_ms=queue_wait,
                     chain_lag=chain_lag,
                     

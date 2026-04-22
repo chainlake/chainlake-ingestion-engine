@@ -92,6 +92,7 @@ def flatten_call(call, block_number, tx_hash, depth=0, parent_trace_id=None, tra
     trace_id = build_trace_id(tx_hash, trace_address)
 
     rows.append({
+        "type": "trace",
         "block_number": block_number,
         "transaction_hash": tx_hash,
 

@@ -1,7 +1,7 @@
-logLevel: info
+logLevel: debug
 
 pipeline:
-  name: "bsc_block_ingestion"
+  name: "bsc_mainet_ingestion"
   mode: "realtime"
 
 chain:
@@ -10,11 +10,12 @@ chain:
   name: bsc
   network: "mainnet"
 
+# trace is currently not supported
 entities:
-  - "block"
-  - "transaction"
   - "receipt"
   - "log"
+  - "block"
+  - "transaction"
 
 erpc:
   project_id: main

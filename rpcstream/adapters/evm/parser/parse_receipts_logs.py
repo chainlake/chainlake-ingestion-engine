@@ -10,6 +10,7 @@ def parse_receipts(receipts: list):
         block_hash = r["blockHash"]
 
         receipt_rows.append({
+            "type": "receipt",
             "transaction_hash": r["transactionHash"],
             "transaction_index": hex_to_dec(r["transactionIndex"]),
             "block_hash": block_hash,
@@ -41,6 +42,7 @@ def parse_receipts(receipts: list):
         # logs flatten
         for log in r.get("logs", []):
             log_rows.append({
+                "type": "log",
                 "log_index": hex_to_dec(log["logIndex"]),
                 "transaction_hash": log["transactionHash"],
                 "transaction_index": hex_to_dec(log["transactionIndex"]),

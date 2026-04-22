@@ -21,10 +21,9 @@ from rpcstream.metrics.kafka import (
 )
 
 class KafkaWriter:
-    def __init__(self, producer, id_calculator, time_calculator, logger, stream_config):
+    def __init__(self, producer, id_calculator, logger, stream_config):
         self.producer = producer
         self.id_calc = id_calculator
-        self.time_calc = time_calculator
         self.logger = logger
 
         self.batch_size = stream_config.batch_size
@@ -168,7 +167,7 @@ class KafkaWriter:
                     except BufferError:
                         BUFFER_RETRY_COUNTER.add(1, {"topic": topic})
                         retries += 1
-                        if retries > 100:
+                        if retries > 10:
                             raise RuntimeError("Kafka producer stuck")
                         # backpressure from Kafka (avoid: BufferError: Local: Queue full)
                         self.producer.poll(0.1)

@@ -9,11 +9,10 @@ from rpcstream.scheduler.adaptive import AdaptiveRpcScheduler
 
 from rpcstream.ingestion.engine import IngestionEngine
 from rpcstream.ingestion.fetcher import EvmRpcFetcher
-from rpcstream.ingestion.processor_registry import PROCESSOR_REGISTRY
 from rpcstream.sinks.kafka.producer import KafkaWriter
 
 from rpcstream.adapters.evm.identity.event_id_calculator import EventIdCalculator
-from rpcstream.adapters.evm.identity.event_time_calculator import EventTimeCalculator
+from rpcstream.adapters.evm.processor import PROCESSOR_REGISTRY
 
 from rpcstream.planner.block_source import RealtimeBlockSource
 from rpcstream.runtime.block_tracker import BlockHeadTracker
@@ -21,7 +20,6 @@ from rpcstream.runtime.telemetry import init_telemetry
 
 from rpcstream.utils.logger import JsonLogger
 import os
-
 
 
 async def main():    
@@ -92,7 +90,6 @@ async def main():
         kafka_write = KafkaWriter(
             producer=producer,
             id_calculator=EventIdCalculator(),
-            time_calculator=EventTimeCalculator(),
             logger=logger,
             stream_config=runtime.kafka.streaming,
         )

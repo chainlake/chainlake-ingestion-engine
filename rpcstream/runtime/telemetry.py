@@ -19,7 +19,7 @@ def init_telemetry(service_name: str = "rpcstream"):
     trace.set_tracer_provider(provider)
 
     otlp_exporter = OTLPSpanExporter(
-        endpoint="http://otel-collector.observability.svc:4317",  # or localhost
+        endpoint="http://otel-collector.observability.svc:4317",
         insecure=True,
         timeout=5,
     )

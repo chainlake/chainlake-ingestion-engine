@@ -48,7 +48,7 @@ class ErpcConfig(BaseModel):
     
 
 class PipelineConfigModel(BaseModel):
-    type: str
+    name: str
     mode: str
 
 class TrackerConfig(BaseModel):

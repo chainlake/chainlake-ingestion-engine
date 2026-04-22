@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from rpcstream.adapters.evm.rpc_requests import build_get_block_by_number
 from rpcstream.adapters.evm.rpc_requests import build_get_block_receipts
 from rpcstream.adapters.evm.rpc_requests import build_debug_trace_block
@@ -6,65 +5,68 @@ from opentelemetry import trace
 
 tracer = trace.get_tracer(__name__)
 
-
-class RpcFetcher:
-    def __init__(self, scheduler, pipeline_type, logger=None, tracker=None):
+class EvmRpcFetcher:
+    def __init__(self, scheduler, entities, logger=None, tracker=None):
         self.scheduler = scheduler
-        self.pipeline_type = pipeline_type
+        self.entities = entities  # List of entities to fetch, e.g., ["block", "transaction"]
         self.logger = logger
         self.tracker = tracker
 
-
     async def fetch(self, block_number):
-        with tracer.start_as_current_span("fetcher.fetch") as span:
-            span.set_attribute("component", "fetcher")
-            span.set_attribute("pipeline", self.pipeline_type)
-            span.set_attribute("block_number", block_number)
-
-            # -------------------------
-            # BUILD REQUEST
-            # -------------------------
-            if self.pipeline_type == "block":
-                req = build_get_block_by_number(block_number, True)
-
-            elif self.pipeline_type == "receipt":
-                req = build_get_block_receipts(block_number)
-
-            elif self.pipeline_type == "trace":
-                req = build_debug_trace_block(block_number)
-
-            else:
-                raise ValueError(f"Unknown pipeline: {self.pipeline_type}")
-
-            span.set_attribute("rpc.method", req.method)
-
-            # -------------------------
-            # LOG BEFORE
-            # -------------------------
-            if self.logger:
-                self.logger.debug(
-                    "fetcher.request",
-                    component="fetcher",
-                    method=req.method,
-                    block=block_number,
-                    pipeline=self.pipeline_type,
-                )
-
-            # -------------------------
-            # EXECUTE (delegates to client span)
-            # -------------------------
+        # -------------------------
+        # LOG BEFORE
+        # -------------------------
+        if self.logger:
+            self.logger.debug(
+                "fetcher.request",
+                component="fetcher",
+                entities=self.entities,
+                block=block_number,
+            )
+        
+        # Initialize a dictionary to store results for the relevant entities
+        raw_data = {}
+        req_method = {}
+        # Fetch only the entities defined in the pipeline.yaml
+        if "block" in self.entities and "transaction" not in self.entities:
+            req = build_get_block_by_number(block_number, False)  # or True depending on the config
             result = await self.scheduler.submit_request(req)
+            raw_data["block"] = result
+            req_method["block"] = req.method
 
-            # -------------------------
-            # LOG AFTER
-            # -------------------------
-            if self.logger:
+        if "transaction" in self.entities:
+            req = build_get_block_by_number(block_number, True)
+            result = await self.scheduler.submit_request(req)
+            raw_data["transaction"] = result
+            req_method["transaction"] = req.method
+            if "block" in self.entities:
+                raw_data["block"] = result
+                req_method["block"] = req.method
+
+        if "receipt" in self.entities or "log" in self.entities:
+            req = build_get_block_receipts(block_number)
+            result = await self.scheduler.submit_request(req)
+            raw_data["receipt"] = result
+            req_method["receipt"] = req.method
+            if "log" in self.entities:
+                raw_data["log"] = result  # Logs are parsed from receipts
+                req_method["log"] = req.method
+    
+        if "trace" in self.entities:
+            req = build_debug_trace_block(block_number)
+            result = await self.scheduler.submit_request(req)
+            req_method["trace"] = req.method
+            raw_data["trace"] = result
+
+        # Log after fetch
+        if self.logger:
+            for entity, respone in raw_data.items():
                 self.logger.debug(
                     "fetcher.response",
                     component="fetcher",
-                    method=req.method,
+                    method = req_method[entity],
                     block=block_number,
-                    pipeline=self.pipeline_type,
+                    entity=entity
                 )
-
-            return result
+        
+        return raw_data

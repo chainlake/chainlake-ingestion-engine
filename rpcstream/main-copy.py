@@ -8,8 +8,8 @@ from rpcstream.client.jsonrpc import JsonRpcClient
 from rpcstream.scheduler.adaptive import AdaptiveRpcScheduler
 
 from rpcstream.ingestion.engine import IngestionEngine
-from rpcstream.ingestion.fetcher import EvmRpcFetcher
-from rpcstream.ingestion.processor_registry import PROCESSOR_REGISTRY
+from rpcstream.ingestion.fetcher import RpcFetcher
+from rpcstream.ingestion.processor import EVMProcessor
 from rpcstream.sinks.kafka.producer import KafkaWriter
 
 from rpcstream.adapters.evm.identity.event_id_calculator import EventIdCalculator
@@ -23,8 +23,7 @@ from rpcstream.utils.logger import JsonLogger
 import os
 
 
-
-async def main():    
+async def main():
     # initialize telemetry
     init_telemetry()
     
@@ -72,17 +71,14 @@ async def main():
         )
 
         # Pass tracker to fetcher
-        fetcher = EvmRpcFetcher(scheduler, runtime.entities, logger, tracker)
+        fetcher = RpcFetcher(scheduler, runtime.pipeline.type, logger, tracker)
 
         # -------------------------
         # PROCESSOR
         # -------------------------
-        # Load processors dynamically based on the YAML configuration
-        processors = {
-            entity: PROCESSOR_REGISTRY[entity]
-            for entity in runtime.entities
-        }
-                
+        processor = EVMProcessor(logger)
+        
+        
         
         # -------------------------
         # KAFKA
@@ -102,7 +98,7 @@ async def main():
         # -------------------------
         engine = IngestionEngine(
             fetcher=fetcher,
-            processors=processors,
+            processor=processor,
             sink=kafka_write,
             topics=main_topics,
             dlq_topics=dlq_topics,

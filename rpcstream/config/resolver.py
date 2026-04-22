@@ -33,7 +33,7 @@ class TrackerRuntime:
 
 @dataclass
 class PipelineRuntime:
-    type: str
+    name: str
     mode: str
 
 @dataclass
@@ -45,7 +45,9 @@ class RuntimeConfig:
     engine: EngineRuntime
     tracker: TrackerRuntime
     pipeline: PipelineRuntime
+    entities: list[str]
     
+
     
 def resolve(cfg) -> RuntimeConfig:
 
@@ -76,12 +78,14 @@ def resolve(cfg) -> RuntimeConfig:
     )
 
     pipeline = PipelineRuntime(
-        type=cfg.pipeline.type,
+        name=cfg.pipeline.name,
         mode=cfg.pipeline.mode,
     )
 
     topic_map = build_topic_maps(cfg)
-
+    
+    entities = cfg.entities
+    
     return RuntimeConfig(
         kafka=kafka,
         topic_map=topic_map,
@@ -90,4 +94,5 @@ def resolve(cfg) -> RuntimeConfig:
         engine=engine,
         tracker=tracker,
         pipeline=pipeline,
+        entities=entities,
     )

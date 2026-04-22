@@ -1,7 +1,7 @@
 logLevel: info
 
 pipeline:
-  type: "block"
+  name: "bsc_block_ingestion"
   mode: "realtime"
 
 chain:
@@ -13,6 +13,8 @@ chain:
 entities:
   - "block"
   - "transaction"
+  - "receipt"
+  - "log"
 
 erpc:
   project_id: main

@@ -9,16 +9,6 @@ from opentelemetry.trace import Status, StatusCode
 # Create a tracer object
 tracer = trace.get_tracer(__name__)
 
-
-# Processor Registry
-PROCESSOR_REGISTRY = {
-    "block": BlockProcessor(),
-    "transaction": TransactionProcessor(),
-    "receipt": ReceiptProcessor(),
-    "log": LogProcessor(),
-    "trace": TraceProcessor(),
-}
-
 class EVMProcessor:
 
     def __init__(self, logger=None):
@@ -74,35 +64,8 @@ class EVMProcessor:
                 span.set_attribute("error.message", str(e))
                 raise
 
-
-# -------------------------
-# BLOCK PIPELINE
-# -------------------------
-class BlockProcessor:
-    def process(self, block_number, value):
-        # Perform block processing
-        block = parse_blocks(value)
-        result = {
-            "block": [block],
-        }
-
-        # Log success after processing
-        if self.logger:
-            for entity, rows in result.items():
-                self.logger.info(
-                    "processor.success",
-                    component="BlockProcessor",
-                    entity=entity,
-                    block=block_number,
-                    count=len(rows)
-                )
-
-        return result
-
-
-
     # -------------------------
-    # BLOCK_TRANSACTION PIPELINE
+    # BLOCK PIPELINE
     # -------------------------
     def process_block_pipeline(self, block_number, value):
         # Perform block processing
@@ -154,10 +117,9 @@ class BlockProcessor:
 
         return result
 
-
-    
-    
-    
+    # -------------------------
+    # TRACE PIPELINE
+    # -------------------------
     # -------------------------
     # TRACE PIPELINE
     # -------------------------

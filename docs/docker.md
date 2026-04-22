@@ -31,7 +31,7 @@ docker save rpcstream:dev -o rpcstream.tar
 sudo k3s ctr images import rpcstream.tar
 
 # 4. restart pod
-kubectl rollout restart deployment bsc-ingestion-block
+kubectl rollout restart deployment bsc-block-transaction -n ingestion
 
 👉 Two containers:
 

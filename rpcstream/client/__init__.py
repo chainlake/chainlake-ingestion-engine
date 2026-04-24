@@ -1,2 +1,2 @@
 from .jsonrpc import JsonRpcClient
-from .models import RpcTaskMeta, RpcErrorResult, ClientMetrics
+from .models import RpcTaskMeta, RpcErrorResult

@@ -1,7 +1,6 @@
 import uuid
 import aiohttp
 import orjson
-
 from rpcstream.client.base import BaseClient
 
 
@@ -18,8 +17,14 @@ class JsonRpcClient(BaseClient):
         dns_ttl_sec: int = 300,
         max_retries: int = 0,
         logger=None,
+        observability=None,
     ):
-        super().__init__(base_url, max_retries=max_retries, logger=logger)
+        super().__init__(
+            base_url,
+            max_retries=max_retries,
+            logger=logger,
+            observability=observability,
+        )
 
         timeout = aiohttp.ClientTimeout(total=timeout_sec)
         connector = aiohttp.TCPConnector(
@@ -48,7 +53,8 @@ class JsonRpcClient(BaseClient):
             "params": request.params,
         }
 
-        span.set_attribute("rpc.method", request.method)
+        if span is not None:
+            span.set_attribute("rpc.method", request.method)
 
         if self.logger:
             self.logger.debug(
@@ -64,8 +70,9 @@ class JsonRpcClient(BaseClient):
             data = orjson.loads(raw)
 
         if "error" in data:
-            span.set_attribute("rpc.status", "error")
-            span.set_attribute("rpc.error", str(data["error"]))
+            if span is not None:
+                span.set_attribute("rpc.status", "error")
+                span.set_attribute("rpc.error", str(data["error"]))
             
             if self.logger:
                 self.logger.error(

@@ -1,5 +1,6 @@
 from rpcstream.config.builder import build_kafka_config, build_erpc_endpoint, build_topic_maps
 from rpcstream.config.profiles.loader import load_kafka_profiles
+from rpcstream.runtime.observability.config import ObservabilityConfig
     
 from dataclasses import dataclass
 from typing import Dict, Any
@@ -37,6 +38,10 @@ class PipelineRuntime:
     mode: str
 
 @dataclass
+class ObservabilityRuntime:
+    config: ObservabilityConfig
+
+@dataclass
 class RuntimeConfig:
     kafka: KafkaRuntime
     topic_map: dict
@@ -46,7 +51,7 @@ class RuntimeConfig:
     tracker: TrackerRuntime
     pipeline: PipelineRuntime
     entities: list[str]
-    
+    observability: ObservabilityRuntime
 
     
 def resolve(cfg) -> RuntimeConfig:
@@ -86,6 +91,10 @@ def resolve(cfg) -> RuntimeConfig:
     
     entities = cfg.entities
     
+    observability = ObservabilityRuntime(
+        config=cfg.observability.model_copy(deep=True),
+    )
+    
     return RuntimeConfig(
         kafka=kafka,
         topic_map=topic_map,
@@ -95,4 +104,5 @@ def resolve(cfg) -> RuntimeConfig:
         tracker=tracker,
         pipeline=pipeline,
         entities=entities,
+        observability=observability,
     )

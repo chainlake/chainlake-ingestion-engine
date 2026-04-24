@@ -1,5 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
+from rpcstream.runtime.observability.config import ObservabilityConfig
 
 
 class KafkaCommon(BaseModel):
@@ -58,8 +59,9 @@ class TrackerConfig(BaseModel):
 class EngineConfig(BaseModel):
     concurrency: int
 
-
 class PipelineConfig(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     logLevel: str
     pipeline: PipelineConfigModel
     chain: ChainConfig
@@ -68,3 +70,7 @@ class PipelineConfig(BaseModel):
     tracker: TrackerConfig
     engine: EngineConfig
     kafka: KafkaConfig
+    observability: ObservabilityConfig = Field(
+        default_factory=ObservabilityConfig,
+        alias="telemetry",
+    )

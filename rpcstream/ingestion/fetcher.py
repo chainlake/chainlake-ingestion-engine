@@ -1,9 +1,6 @@
 from rpcstream.adapters.evm.rpc_requests import build_get_block_by_number
 from rpcstream.adapters.evm.rpc_requests import build_get_block_receipts
 from rpcstream.adapters.evm.rpc_requests import build_debug_trace_block
-from opentelemetry import trace
-
-tracer = trace.get_tracer(__name__)
 
 class EvmRpcFetcher:
     def __init__(self, scheduler, entities, logger=None, tracker=None):

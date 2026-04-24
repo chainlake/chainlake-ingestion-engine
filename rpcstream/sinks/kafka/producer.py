@@ -1,31 +1,31 @@
 import json
 import time
 import asyncio
-from confluent_kafka import SerializingProducer
-from confluent_kafka.schema_registry import SchemaRegistryClient
-from confluent_kafka.schema_registry.protobuf import ProtobufSerializer
 from collections import defaultdict
-from opentelemetry import metrics
+
 from opentelemetry import trace
+from opentelemetry.trace import Link
 
-tracer = trace.get_tracer(__name__)
-meter = metrics.get_meter("kafka")
-
-from rpcstream.metrics.kafka import (
-    BATCH_COUNTER,
-    BATCH_LATENCY,
-    MESSAGE_COUNTER,
-    BUFFER_RETRY_COUNTER,
-    DELIVERY_SUCCESS,
-    DELIVERY_ERROR,
-)
+from rpcstream.metrics.kafka import KafkaMetrics
+from rpcstream.runtime.observability.context import ObservabilityContext
 
 class KafkaWriter:
-    def __init__(self, producer, id_calculator, time_calculator, logger, config):
+    def __init__(
+        self,
+        producer,
+        id_calculator,
+        time_calculator,
+        logger,
+        config,
+        observability: ObservabilityContext | None = None,
+    ):
         self.producer = producer
         self.id_calc = id_calculator
         self.time_calc = time_calculator
         self.logger = logger
+        self.observability = observability or ObservabilityContext.disabled()
+        self._tracer = self.observability.get_tracer(__name__)
+        self.metrics = KafkaMetrics(self.observability.get_meter("rpcstream.kafka"))
 
         self.batch_size = config.batch_size
         self.flush_interval = config.flush_interval_ms / 1000
@@ -41,7 +41,7 @@ class KafkaWriter:
     # ----------------------------
     def delivery_report(self, err, msg):
         if err:
-            DELIVERY_ERROR.add(1, {"topic": msg.topic()})
+            self.metrics.DELIVERY_ERROR.add(1, {"topic": msg.topic()})
             self.logger.error(
                 "kafka.delivery_failed",
                 component="sink",
@@ -49,7 +49,7 @@ class KafkaWriter:
                 error=str(err),
             )
         else:
-            DELIVERY_SUCCESS.add(1, {"topic": msg.topic()})
+            self.metrics.DELIVERY_SUCCESS.add(1, {"topic": msg.topic()})
             self.logger.debug(
                 "kafka.delivery_success",
                 component="sink",
@@ -62,7 +62,9 @@ class KafkaWriter:
     # Public API (NON-BLOCKING)
     # ----------------------------
     async def send(self, topic, rows):
-        with tracer.start_as_current_span("kafka.enqueue") as span:
+        linked_span_context = trace.get_current_span().get_span_context()
+
+        with self._tracer.start_as_current_span("kafka.enqueue") as span:
             span.set_attribute("component", "sink")
             span.set_attribute("topic", topic)
             span.set_attribute("batch_size", len(rows))
@@ -78,7 +80,10 @@ class KafkaWriter:
                     queue_size=self.queue.qsize(),
                 )
 
-            await asyncio.wait_for(self.queue.put((topic, rows)), timeout=0.1) # batch enqueue, Apply backpressure to engine
+            await asyncio.wait_for(
+                self.queue.put((topic, rows, linked_span_context)),
+                timeout=0.1,
+            ) # batch enqueue, Apply backpressure to engine
             # QUEUE_SIZE.set(self.queue.qsize())
 
     # ----------------------------
@@ -98,8 +103,8 @@ class KafkaWriter:
                 item = None
 
             if item:
-                topic, rows = item
-                buffer.extend((topic, r) for r in rows)
+                topic, rows, parent_span_context = item
+                buffer.extend((topic, r, parent_span_context) for r in rows)
 
             now = time.time()
 
@@ -107,7 +112,7 @@ class KafkaWriter:
                 len(buffer) >= self.batch_size or
                 (now - last_flush) >= self.flush_interval
             ):
-                await self._flush_batch(buffer)
+                await self._flush_buffer(buffer)
                 buffer.clear()
                 last_flush = now
             
@@ -120,30 +125,48 @@ class KafkaWriter:
     # ----------------------------
     # Flush batch
     # ----------------------------
-    async def _flush_batch(self, buffer):
-        with tracer.start_as_current_span("kafka.batch_send") as span:
+    async def _flush_buffer(self, buffer):
+        await self._flush_batch(buffer)
+
+    async def _flush_batch(self, items):
+        links = []
+        seen = set()
+        for _, _, parent_span_context in items:
+            if not parent_span_context.is_valid:
+                continue
+            key = (parent_span_context.trace_id, parent_span_context.span_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            links.append(Link(parent_span_context))
+
+        with self._tracer.start_as_current_span(
+            "kafka.batch_send",
+            links=links,
+        ) as span:
             span.set_attribute("component", "sink")
-            span.set_attribute("batch_size", len(buffer))
+            span.set_attribute("batch_size", len(items))
+            span.set_attribute("linked_span_count", len(links))
             
             topic_counts = defaultdict(int)
 
             # count per topic
-            for topic, _ in buffer:
+            for topic, _, _ in items:
                 topic_counts[topic] += 1
 
             if self.logger:
                 self.logger.debug(
                     "kafka.batch_send",
                     component="sink",
-                    batch_size=len(buffer),
+                    batch_size=len(items),
                     topics=dict(topic_counts),
                 )
                 
             start = time.time()
-            BATCH_COUNTER.add(1)
+            self.metrics.BATCH_COUNTER.add(1)
             
-            for topic, r in buffer:
-                MESSAGE_COUNTER.add(1, {"topic": topic})
+            for topic, r, _ in items:
+                self.metrics.MESSAGE_COUNTER.add(1, {"topic": topic})
                 event_id = self.id_calc.calculate_event_id(r)
                 
                 # fallback for DLQ / unknown schema
@@ -173,7 +196,7 @@ class KafkaWriter:
                         break
                     
                     except BufferError:
-                        BUFFER_RETRY_COUNTER.add(1, {"topic": topic})
+                        self.metrics.BUFFER_RETRY_COUNTER.add(1, {"topic": topic})
                         retries += 1
                         if retries > 10:
                             raise RuntimeError("Kafka producer stuck")
@@ -184,7 +207,7 @@ class KafkaWriter:
             # trigger delivery callbacks
             self.producer.poll(0)
             latency = (time.time() - start) * 1000
-            BATCH_LATENCY.record(latency)
+            self.metrics.BATCH_LATENCY.record(latency)
             span.set_attribute("batch_latency_ms", latency)
             
     # ----------------------------

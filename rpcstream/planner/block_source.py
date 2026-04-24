@@ -1,9 +1,7 @@
 from abc import ABC, abstractmethod
 import asyncio
 
-from opentelemetry import trace
-
-tracer = trace.get_tracer(__name__)
+from rpcstream.runtime.observability.context import ObservabilityContext
 
 # =========================
 # Base Interface
@@ -31,17 +29,20 @@ class BackfillBlockSource(BlockSource):
         self,
         start: int,
         end: int,
-        delay_ms: float = 0
+        delay_ms: float = 0,
+        observability: ObservabilityContext | None = None,
     ):
         self.current = start
         self.end = end
         self.delay = delay_ms / 1000.0
         self._span = None
+        self.observability = observability or ObservabilityContext.disabled()
+        self._tracer = self.observability.get_tracer(__name__)
 
     async def next_block(self):
         # start span only once
         if self._span is None:
-            self._span = tracer.start_span("block_source.backfill_range")
+            self._span = self._tracer.start_span("block_source.backfill_range")
             self._span.set_attribute("start", self.current)
             self._span.set_attribute("end", self.end)
             
@@ -69,9 +70,11 @@ class BackfillBlockSource(BlockSource):
 
 # Realtime implementation
 class RealtimeBlockSource(BlockSource):
-    def __init__(self, tracker):
+    def __init__(self, tracker, observability: ObservabilityContext | None = None):
         self.tracker = tracker
         self.last_emitted = None
+        self.observability = observability or ObservabilityContext.disabled()
+        self._tracer = self.observability.get_tracer(__name__)
 
 
     async def next_block(self):
@@ -82,7 +85,7 @@ class RealtimeBlockSource(BlockSource):
             # WAIT FOR FIRST HEAD
             # -------------------------
             if latest is None:
-                with tracer.start_as_current_span("block_source.wait_for_head") as span:
+                with self._tracer.start_as_current_span("block_source.wait_for_head") as span:
                     span.set_attribute("source", "realtime")
                     await asyncio.sleep(0.1)
                 continue

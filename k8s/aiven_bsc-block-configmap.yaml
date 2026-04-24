@@ -8,7 +8,7 @@ data:
     logLevel: info
 
     pipeline:
-      type: "block"
+      name: "bsc_mainnet_ingestion"
       mode: "realtime"
 
     chain:
@@ -19,7 +19,6 @@ data:
 
     entities:
       - "block"
-      - "transaction"
 
     erpc:
       project_id: main
@@ -54,3 +53,15 @@ data:
         batch_size: 100          # micro-batch size
         flush_interval_ms: 20    # max wait time
         queue_maxsize: 100       # backpressure control
+
+
+    telemetry:
+      tracing:
+        enabled: false
+        endpoint: "http://otel-collector.observability.svc:4317"
+        sampleRate: 0.5 # Sample 10% of requests, lower sample rate will impact the Linked Span between kafka.batch_send and streaming.run
+
+      metrics:
+        enabled: false
+        endpoint: "http://otel-collector.observability.svc:4317"
+        export_interval_ms: 5000

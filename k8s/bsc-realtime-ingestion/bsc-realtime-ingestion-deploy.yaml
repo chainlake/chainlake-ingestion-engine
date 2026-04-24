@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: bsc-realtime-transaction
+  name: bsc-realtime-ingestion
   namespace: ingestion
   labels:
     chain: bsc
@@ -53,13 +53,13 @@ spec:
 
           resources:
             requests:
-              cpu: "100m"
-              memory: "64Mi"
-            limits:
               cpu: "200m"
               memory: "128Mi"
+            limits:
+              cpu: "400m"
+              memory: "256Mi"
 
       volumes:
         - name: config-volume
           configMap:
-            name: bsc-block-config
+            name: bsc-realtime-ingestion

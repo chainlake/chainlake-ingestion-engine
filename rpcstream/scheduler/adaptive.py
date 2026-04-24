@@ -5,16 +5,22 @@ from rpcstream.client.base import BaseClient
 from rpcstream.client.models import RpcTaskMeta, RpcErrorResult
 from rpcstream.adapters.base import BaseRpcRequest  # Generic RPC request
 from rpcstream.scheduler.base import BaseScheduler
-from opentelemetry import trace
-
-tracer = trace.get_tracer(__name__)
+from rpcstream.runtime.observability.context import ObservabilityContext
 
 
 class AdaptiveRpcScheduler(BaseScheduler):
-    def __init__(self, client: BaseClient, logger=None, **kwargs):
+    def __init__(
+        self,
+        client: BaseClient,
+        logger=None,
+        observability: ObservabilityContext | None = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.client = client
         self.logger = logger
+        self.observability = observability or ObservabilityContext.disabled()
+        self._tracer = self.observability.get_tracer(__name__)
         
     # ----------------------------
     # Generic submit method for BaseRpcRequest
@@ -27,7 +33,7 @@ class AdaptiveRpcScheduler(BaseScheduler):
         """
         enqueue_ts = time.time()
 
-        with tracer.start_as_current_span("scheduler.submit_request") as span:
+        with self._tracer.start_as_current_span("scheduler.submit_request") as span:
             span.set_attribute("scheduler.method", request.operation_name())
 
             if self.logger:  # DEBUG

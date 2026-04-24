@@ -53,7 +53,7 @@ class BlockHeadTracker:
                 start = time.time()
                 
                 request = build_eth_blockNumber()
-                result = await self.client.execute(request)
+                result = await self.client.execute(request, trace_request=False)
                 
                 latency = (time.time() - start) * 1000
                 

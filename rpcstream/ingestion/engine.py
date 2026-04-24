@@ -3,23 +3,10 @@ import asyncio
 import time
 from rpcstream.client.models import RpcErrorResult
 
-from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
-tracer = trace.get_tracer(__name__)
-
-from rpcstream.metrics.engine import (
-    BLOCK_COUNTER,
-    ROW_COUNTER,
-    BLOCK_LATENCY,
-    QUEUE_WAIT,
-    INFLIGHT,
-    TOTAL_TIME,
-    ERROR_COUNTER,
-    DLQ_COUNTER,
-    CHAIN_LAG,
-    INGESTION_LAG,
-)
+from rpcstream.metrics.engine import EngineMetrics
+from rpcstream.runtime.observability.context import ObservabilityContext
 
 class IngestionEngine:
     def __init__(
@@ -30,7 +17,8 @@ class IngestionEngine:
         topics, 
         dlq_topics=None,
         concurrency=10, 
-        logger=None
+        logger=None,
+        observability: ObservabilityContext | None = None,
     ):
         self.fetcher = fetcher
         self.processors = processors # e.g. {"block": BlockProcessor(), "transaction": TransactionProcessor(), ...}
@@ -41,6 +29,9 @@ class IngestionEngine:
         self.logger = logger
         self._latest_processed_block = 0
         self._lag_lock = asyncio.Lock()
+        self.observability = observability or ObservabilityContext.disabled()
+        self._tracer = self.observability.get_tracer(__name__)
+        self.metrics = EngineMetrics(self.observability.get_meter("rpcstream.engine"))
 
     async def run_stream(self, block_source):
         await self.sink.start()
@@ -76,26 +67,28 @@ class IngestionEngine:
 
 
     async def _run_one(self, block_number):
+        start_total = time.time()
+        current_entity = "unknown"
         try:
             # =========================
             # Span for the entire streaming process
             # =========================
-            with tracer.start_as_current_span("streaming.run") as root_span:
+            with self._tracer.start_as_current_span("streaming.run") as root_span:
                 root_span.set_attribute("component", "engine")
                 root_span.set_attribute("block_number", block_number)
                     
-                INFLIGHT.add(1)
-                start_total = time.time()            
+                self.metrics.INFLIGHT.add(1)
             
                 # 1. FETCH
                 raw_data = await self.fetcher.fetch(block_number)
 
                 # Process data for each entity
                 for entity, processor in self.processors.items():
+                    current_entity = entity
                     # HANDLE RPC FAILURE
                     if isinstance(raw_data[entity], RpcErrorResult):
-                        error_msg = result.error
-                        ERROR_COUNTER.add(1, {"stage": "rpc"})
+                        error_msg = raw_data[entity].error
+                        self.metrics.ERROR_COUNTER.add(1, {"stage": "rpc"})
                         
                         if self.logger:
                             self.logger.warn(
@@ -121,32 +114,33 @@ class IngestionEngine:
                         # 3. LAG
                         latest_block, chain_lag, ingestion_lag = await self._compute_lag(block_number)
                         if chain_lag is not None:
-                            CHAIN_LAG.record(chain_lag)
+                            self.metrics.CHAIN_LAG.record(chain_lag)
                         if ingestion_lag is not None:
-                            INGESTION_LAG.record(ingestion_lag)
+                            self.metrics.INGESTION_LAG.record(ingestion_lag)
                         
                         latency = meta.extra.get("latency_ms", 0)
                         queue_wait = meta.extra.get("queue_wait_ms", 0)
                         
-                        BLOCK_COUNTER.add(1, {"entity": entity})
-                        BLOCK_LATENCY.record(latency, {"entity": entity})
-                        QUEUE_WAIT.record(queue_wait, {"entity": entity})
+                        self.metrics.BLOCK_COUNTER.add(1, {"entity": entity})
+                        self.metrics.BLOCK_LATENCY.record(latency, {"entity": entity})
+                        self.metrics.QUEUE_WAIT.record(queue_wait, {"entity": entity})
                         
                         # 4. SINK
                         topic = self.topics.get(entity)
                         rows = processed_data[entity]
                         
-                        ROW_COUNTER.add(len(rows), {"entity": entity})
-                        self.logger.info(
-                            "engine.processed",
-                            component="engine",
-                            block=block_number,
-                            entity=entity,
-                            latency_ms=latency,
-                            payload=len(rows),
-                            ingestion_lag=ingestion_lag,
-                            chain_lag=chain_lag,
-                        )                        
+                        self.metrics.ROW_COUNTER.add(len(rows), {"entity": entity})
+                        if self.logger:
+                            self.logger.info(
+                                "engine.processed",
+                                component="engine",
+                                block=block_number,
+                                entity=entity,
+                                latency_ms=latency,
+                                payload=len(rows),
+                                ingestion_lag=ingestion_lag,
+                                chain_lag=chain_lag,
+                            )
 
                         if not topic:
                             continue
@@ -158,20 +152,20 @@ class IngestionEngine:
                             
         except Exception as e:
             # Handle failure in a new span
-            with tracer.start_as_current_span("engine.error") as error_span:
+            with self._tracer.start_as_current_span("engine.error") as error_span:
                 error_span.set_status(Status(StatusCode.ERROR))
                 error_span.set_attribute("error.message", str(e))
-                error_span.set_attribute("entity", entity)
+                error_span.set_attribute("entity", current_entity)
                 error_span.set_attribute("block_number", block_number)
             
             error_msg = repr(e)
-            ERROR_COUNTER.add(1, {"stage": "processor"})
+            self.metrics.ERROR_COUNTER.add(1, {"stage": "processor"})
             
             if self.logger:
                 self.logger.error(
                     "engine.processor_error",
                     component="engine",
-                    entity=entity,
+                    entity=current_entity,
                     block=block_number,
                     error=error_msg
                 )
@@ -185,19 +179,16 @@ class IngestionEngine:
                     stage="processor",
                 )
             
-            if self.metrics:
-                self.metrics.record_error()
-
         finally:
-            INFLIGHT.add(-1)
+            self.metrics.INFLIGHT.add(-1)
             total_ms = (time.time() - start_total) * 1000
-            TOTAL_TIME.record(total_ms, {"entity": entity})
+            self.metrics.TOTAL_TIME.record(total_ms, {"entity": current_entity})
 
 
 
     async def _send_dlq(self, entity, block_number, error, stage):
         topic  = self.dlq_topics.get(entity)
-        DLQ_COUNTER.add(1, {"entity": entity, "stage": stage})
+        self.metrics.DLQ_COUNTER.add(1, {"entity": entity, "stage": stage})
         
         if not topic:
             if self.logger:

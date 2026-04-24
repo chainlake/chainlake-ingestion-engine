@@ -4,7 +4,6 @@ from rpcstream.config.builder import (
     build_schema_registry_url,
     build_topic_maps,
 )
-from rpcstream.config.profiles.loader import load_kafka_profiles
 from rpcstream.runtime.observability.config import ObservabilityConfig
 from rpcstream.runtime.topic import TopicMaps
     

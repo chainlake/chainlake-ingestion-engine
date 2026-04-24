@@ -5,51 +5,40 @@ from rpcstream.runtime.topic import TopicMaps, build_topics, normalize_entity
 
 def build_kafka_config(cfg: PipelineConfig) -> dict:
     kafka = cfg.kafka
-    common = kafka.common
+    connection = kafka.connection
 
     result = {
-         "bootstrap.servers": os.getenv("KAFKA_BOOTSTRAP_SERVERS", common.bootstrap_servers),  # Use env var if set
+        "bootstrap.servers": os.getenv(
+            "KAFKA_BOOTSTRAP_SERVERS",
+            connection.bootstrap_servers,
+        ),
     }
+    if connection.security_protocol:
+        result["security.protocol"] = os.getenv(
+            "KAFKA_SECURITY_PROTOCOL",
+            connection.security_protocol,
+        )
 
-    # -------------------------
-    # Profile
-    # -------------------------
-    from rpcstream.config.profiles.loader import load_kafka_profiles
+    if connection.sasl_mechanism:
+        result["sasl.mechanism"] = os.getenv(
+            "KAFKA_SASL_MECHANISM",
+            connection.sasl_mechanism,
+        )
 
-    profiles = load_kafka_profiles()
-    profile = profiles.get(kafka.profile, {})
-    # -------------------------
-    # Security
-    # -------------------------
-    security = profile.get("security")
-    if security:
-        protocol = os.getenv("KAFKA_SECURITY_PROTOCOL", security.get("protocol"))
-        if protocol:
-            result["security.protocol"] = protocol
-
-        mechanism = os.getenv("KAFKA_SASL_MECHANISM", security.get("mechanism"))
-        if mechanism:
-            result["sasl.mechanism"] = mechanism
-
-    # -------------------------
-    # Auth
-    # -------------------------
-    auth = profile.get("auth")
-    if auth:
-        username = os.getenv(auth.get("username_env", ""))
-        password = os.getenv(auth.get("password_env", ""))
-
+    username_env = connection.auth.username_env
+    password_env = connection.auth.password_env
+    if username_env:
+        username = os.getenv(username_env)
         if username:
             result["sasl.username"] = username
+    if password_env:
+        password = os.getenv(password_env)
         if password:
             result["sasl.password"] = password
 
-    # -------------------------
-    # SSL
-    # -------------------------
-    ssl = profile.get("ssl")
-    if ssl:
-        ca_path = os.getenv(ssl.get("ca_path_env", ""))
+    ca_path_env = connection.ssl.ca_path_env
+    if ca_path_env:
+        ca_path = os.getenv(ca_path_env)
         if ca_path:
             result["ssl.ca.location"] = ca_path
 
@@ -58,7 +47,10 @@ def build_kafka_config(cfg: PipelineConfig) -> dict:
     # -------------------------
     result["linger.ms"] = kafka.producer.linger_ms
     result["batch.size"] = kafka.producer.batch_size
-    result["compression.type"] = os.getenv("KAFKA_COMPRESSION_TYPE", "zstd")
+    result["compression.type"] = os.getenv(
+        "KAFKA_COMPRESSION_TYPE",
+        kafka.producer.compression_type,
+    )
 
     return result
 

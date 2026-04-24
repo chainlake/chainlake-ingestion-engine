@@ -12,8 +12,8 @@ chain:
 
 # trace is currently not supported
 entities:
-  # - "receipt"
-  # - "log"
+  - "receipt"
+  - "log"
   - "block"
   - "transaction"
 
@@ -39,13 +39,21 @@ engine:
   concurrency: 10
 
 kafka:
-  profile: aiven   # local | k8s | aiven | msk | confluent
-  common:
+  connection:
     bootstrap_servers: "localhost:30092"
+    security_protocol: SASL_SSL
+    sasl_mechanism: PLAIN
+    auth:
+      username_env: KAFKA_USERNAME
+      password_env: KAFKA_PASSWORD
+    ssl:
+      ca_path_env: KAFKA_CA_PATH
+  common:
     topic_template: "{type}.{chain}.{network}.{kind}_{entity}"
   producer:
     linger_ms: 50
     batch_size: 65536
+    compression_type: zstd  # lz4 for realtime ingestion, zstd for backfill；zstd have higher compression rate
   streaming:
     batch_size: 100          # micro-batch size
     flush_interval_ms: 50    # max wait time

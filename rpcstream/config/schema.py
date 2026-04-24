@@ -3,14 +3,31 @@ from typing import Optional
 from rpcstream.runtime.observability.config import ObservabilityConfig
 
 
-class KafkaCommon(BaseModel):
+class KafkaAuth(BaseModel):
+    username_env: Optional[str] = None
+    password_env: Optional[str] = None
+
+
+class KafkaSsl(BaseModel):
+    ca_path_env: Optional[str] = None
+
+
+class KafkaConnection(BaseModel):
     bootstrap_servers: str
+    security_protocol: Optional[str] = None
+    sasl_mechanism: Optional[str] = None
+    auth: KafkaAuth = Field(default_factory=KafkaAuth)
+    ssl: KafkaSsl = Field(default_factory=KafkaSsl)
+
+
+class KafkaCommon(BaseModel):
     topic_template: Optional[str] = None
 
 
 class KafkaProducer(BaseModel):
     linger_ms: int
     batch_size: int
+    compression_type: str = "zstd"
 
 
 class KafkaStreaming(BaseModel):
@@ -24,7 +41,7 @@ class KafkaProtobuf(BaseModel):
 
 
 class KafkaConfig(BaseModel):
-    profile: str
+    connection: KafkaConnection
     common: KafkaCommon
     producer: KafkaProducer
     streaming: KafkaStreaming

@@ -61,6 +61,19 @@ class ErpcInflight(BaseModel):
     initial_inflight: int
     latency_target_ms: int
 
+    @model_validator(mode="after")
+    def validate_bounds(self):
+        if self.min_inflight < 1:
+            raise ValueError("erpc.inflight.min_inflight must be >= 1")
+        if self.max_inflight < self.min_inflight:
+            raise ValueError("erpc.inflight.max_inflight must be >= erpc.inflight.min_inflight")
+        if not (self.min_inflight <= self.initial_inflight <= self.max_inflight):
+            raise ValueError(
+                "erpc.inflight.initial_inflight must be between "
+                "erpc.inflight.min_inflight and erpc.inflight.max_inflight"
+            )
+        return self
+
 
 class ErpcConfig(BaseModel):
     project_id: str

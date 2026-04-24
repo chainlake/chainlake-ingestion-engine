@@ -16,13 +16,16 @@ class BaseScheduler:
         initial_inflight=10,
         latency_target_ms=200,
     ):
-        self.min_inflight = min_inflight
-        self.max_inflight = max_inflight
-        self.current_limit = initial_inflight
+        self.min_inflight = max(1, int(min_inflight))
+        self.max_inflight = max(self.min_inflight, int(max_inflight))
+        self.current_limit = min(
+            self.max_inflight,
+            max(self.min_inflight, int(initial_inflight)),
+        )
         self.latency_target_ms = latency_target_ms
 
         # hard cap only
-        self.sem = asyncio.Semaphore(max_inflight)
+        self.sem = asyncio.Semaphore(self.max_inflight)
 
         self.inflight = 0
         self.success = 0

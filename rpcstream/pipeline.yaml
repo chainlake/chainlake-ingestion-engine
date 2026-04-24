@@ -24,7 +24,7 @@ erpc:
   timeout_sec: 10
   max_retries: 1
   inflight:
-    min_inflight: 5
+    min_inflight: 1
     max_inflight: 10
     initial_inflight: 5
     latency_target_ms: 1000

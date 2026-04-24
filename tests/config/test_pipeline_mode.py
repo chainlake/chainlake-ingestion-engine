@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from rpcstream.config.schema import PipelineConfigModel
+from rpcstream.config.schema import ErpcInflight, PipelineConfigModel
 
 
 def test_backfill_mode_requires_start_not_greater_than_end():
@@ -50,3 +50,54 @@ def test_backfill_mode_normalizes_numeric_bounds():
 
     assert cfg.start_block == 90000000
     assert cfg.end_block == 90000100
+
+
+def test_inflight_requires_min_at_least_one():
+    with pytest.raises(ValidationError):
+        ErpcInflight(
+            min_inflight=0,
+            max_inflight=5,
+            initial_inflight=1,
+            latency_target_ms=1000,
+        )
+
+
+def test_inflight_requires_max_not_below_min():
+    with pytest.raises(ValidationError):
+        ErpcInflight(
+            min_inflight=3,
+            max_inflight=2,
+            initial_inflight=3,
+            latency_target_ms=1000,
+        )
+
+
+def test_inflight_requires_initial_within_bounds():
+    with pytest.raises(ValidationError):
+        ErpcInflight(
+            min_inflight=2,
+            max_inflight=5,
+            initial_inflight=1,
+            latency_target_ms=1000,
+        )
+
+    with pytest.raises(ValidationError):
+        ErpcInflight(
+            min_inflight=2,
+            max_inflight=5,
+            initial_inflight=6,
+            latency_target_ms=1000,
+        )
+
+
+def test_inflight_accepts_valid_bounds():
+    cfg = ErpcInflight(
+        min_inflight=1,
+        max_inflight=5,
+        initial_inflight=3,
+        latency_target_ms=1000,
+    )
+
+    assert cfg.min_inflight == 1
+    assert cfg.max_inflight == 5
+    assert cfg.initial_inflight == 3

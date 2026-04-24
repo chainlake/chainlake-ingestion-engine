@@ -1,6 +1,12 @@
-from rpcstream.config.builder import build_kafka_config, build_erpc_endpoint, build_topic_maps
+from rpcstream.config.builder import (
+    build_erpc_endpoint,
+    build_kafka_config,
+    build_schema_registry_url,
+    build_topic_maps,
+)
 from rpcstream.config.profiles.loader import load_kafka_profiles
 from rpcstream.runtime.observability.config import ObservabilityConfig
+from rpcstream.runtime.topic import TopicMaps
     
 from dataclasses import dataclass
 from typing import Dict, Any
@@ -10,6 +16,8 @@ from typing import Dict, Any
 class KafkaRuntime:
     config: Dict[str, Any] 
     streaming: any
+    protobuf_enabled: bool
+    schema_registry_url: str | None
     
 @dataclass
 class ClientRuntime:
@@ -44,7 +52,7 @@ class ObservabilityRuntime:
 @dataclass
 class RuntimeConfig:
     kafka: KafkaRuntime
-    topic_map: dict
+    topic_map: TopicMaps
     client: ClientRuntime
     scheduler: SchedulerRuntime
     engine: EngineRuntime
@@ -59,6 +67,8 @@ def resolve(cfg) -> RuntimeConfig:
     kafka = KafkaRuntime(
         config=build_kafka_config(cfg),
         streaming=cfg.kafka.streaming,
+        protobuf_enabled=cfg.kafka.protobuf.enabled,
+        schema_registry_url=build_schema_registry_url(),
     )
 
     client = ClientRuntime(

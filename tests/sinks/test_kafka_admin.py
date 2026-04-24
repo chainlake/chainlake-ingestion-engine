@@ -1,0 +1,44 @@
+from types import SimpleNamespace
+
+from rpcstream.sinks.kafka.admin import KafkaTopicManager
+
+
+class _Future:
+    def __init__(self, value=None):
+        self._value = value
+
+    def result(self):
+        return self._value
+
+
+class _AdminStub:
+    def __init__(self):
+        self.incremental_updates = []
+
+    def describe_configs(self, resources):
+        return {
+            resources[0]: _Future({"message.timestamp.type": SimpleNamespace(value="CreateTime")}),
+            resources[1]: _Future({"message.timestamp.type": SimpleNamespace(value="LogAppendTime")}),
+        }
+
+    def incremental_alter_configs(self, resources):
+        self.incremental_updates = resources
+        return {resource: _Future(None) for resource in resources}
+
+
+def test_config_entry_value_supports_objects_and_plain_values():
+    manager = KafkaTopicManager(producer_config={})
+
+    assert manager._config_entry_value(SimpleNamespace(value="LogAppendTime")) == "LogAppendTime"
+    assert manager._config_entry_value("CreateTime") == "CreateTime"
+    assert manager._config_entry_value(None) is None
+
+
+def test_ensure_log_append_time_updates_only_mismatched_topics():
+    manager = KafkaTopicManager(producer_config={})
+    admin = _AdminStub()
+
+    manager._ensure_log_append_time(admin, ["raw_topic", "dlq_topic"])
+
+    assert len(admin.incremental_updates) == 1
+    assert admin.incremental_updates[0].name == "raw_topic"

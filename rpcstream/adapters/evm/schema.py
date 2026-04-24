@@ -1,0 +1,174 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class FieldSchema:
+    name: str
+    scalar_type: str
+    repeated: bool = False
+
+
+@dataclass(frozen=True)
+class EntitySchema:
+    entity: str
+    message_name: str
+    fields: tuple[FieldSchema, ...]
+
+
+BLOCK_SCHEMA = EntitySchema(
+    entity="block",
+    message_name="EvmBlock",
+    fields=(
+        FieldSchema("type", "string"),
+        FieldSchema("number", "int64"),
+        FieldSchema("hash", "string"),
+        FieldSchema("parent_hash", "string"),
+        FieldSchema("nonce", "int64"),
+        FieldSchema("sha3_uncles", "string"),
+        FieldSchema("logs_bloom", "string"),
+        FieldSchema("transactions_root", "string"),
+        FieldSchema("state_root", "string"),
+        FieldSchema("receipts_root", "string"),
+        FieldSchema("miner", "string"),
+        FieldSchema("difficulty", "string"),
+        FieldSchema("total_difficulty", "string"),
+        FieldSchema("size", "int64"),
+        FieldSchema("extra_data", "string"),
+        FieldSchema("gas_limit", "int64"),
+        FieldSchema("gas_used", "int64"),
+        FieldSchema("timestamp", "int64"),
+        FieldSchema("transaction_count", "int64"),
+        FieldSchema("base_fee_per_gas", "string"),
+        FieldSchema("withdrawals_root", "string"),
+        FieldSchema("withdrawals", "string"),
+        FieldSchema("blob_gas_used", "int64"),
+        FieldSchema("excess_blob_gas", "int64"),
+        FieldSchema("id", "string"),
+        FieldSchema("ingest_timestamp", "int64"),
+    ),
+)
+
+
+TRANSACTION_SCHEMA = EntitySchema(
+    entity="transaction",
+    message_name="EvmTransaction",
+    fields=(
+        FieldSchema("type", "string"),
+        FieldSchema("hash", "string"),
+        FieldSchema("block_hash", "string"),
+        FieldSchema("transaction_index", "int64"),
+        FieldSchema("from_address", "string"),
+        FieldSchema("to_address", "string"),
+        FieldSchema("nonce", "int64"),
+        FieldSchema("block_number", "int64"),
+        FieldSchema("block_timestamp", "int64"),
+        FieldSchema("value", "string"),
+        FieldSchema("gas", "int64"),
+        FieldSchema("gas_price", "string"),
+        FieldSchema("max_fee_per_gas", "string"),
+        FieldSchema("max_priority_fee_per_gas", "string"),
+        FieldSchema("max_fee_per_blob_gas", "string"),
+        FieldSchema("transaction_type", "int64"),
+        FieldSchema("chain_id", "int64"),
+        FieldSchema("v", "int64"),
+        FieldSchema("r", "string"),
+        FieldSchema("s", "string"),
+        FieldSchema("input", "string"),
+        FieldSchema("blob_versioned_hashes", "string", repeated=True),
+        FieldSchema("id", "string"),
+        FieldSchema("ingest_timestamp", "int64"),
+    ),
+)
+
+
+RECEIPT_SCHEMA = EntitySchema(
+    entity="receipt",
+    message_name="EvmReceipt",
+    fields=(
+        FieldSchema("type", "string"),
+        FieldSchema("transaction_hash", "string"),
+        FieldSchema("transaction_index", "int64"),
+        FieldSchema("block_hash", "string"),
+        FieldSchema("block_number", "int64"),
+        FieldSchema("from_address", "string"),
+        FieldSchema("to_address", "string"),
+        FieldSchema("cumulative_gas_used", "int64"),
+        FieldSchema("gas_used", "int64"),
+        FieldSchema("contract_address", "string"),
+        FieldSchema("status", "int64"),
+        FieldSchema("effective_gas_price", "string"),
+        FieldSchema("transaction_type", "int64"),
+        FieldSchema("l1_fee", "string"),
+        FieldSchema("l1_gas_used", "int64"),
+        FieldSchema("l1_gas_price", "string"),
+        FieldSchema("l1_fee_scalar", "string"),
+        FieldSchema("blob_gas_price", "string"),
+        FieldSchema("blob_gas_used", "int64"),
+        FieldSchema("id", "string"),
+        FieldSchema("ingest_timestamp", "int64"),
+    ),
+)
+
+
+LOG_SCHEMA = EntitySchema(
+    entity="log",
+    message_name="EvmLog",
+    fields=(
+        FieldSchema("type", "string"),
+        FieldSchema("log_index", "int64"),
+        FieldSchema("transaction_hash", "string"),
+        FieldSchema("transaction_index", "int64"),
+        FieldSchema("block_hash", "string"),
+        FieldSchema("block_number", "int64"),
+        FieldSchema("address", "string"),
+        FieldSchema("data", "string"),
+        FieldSchema("topics", "string", repeated=True),
+        FieldSchema("removed", "bool"),
+        FieldSchema("id", "string"),
+        FieldSchema("ingest_timestamp", "int64"),
+    ),
+)
+
+
+TRACE_SCHEMA = EntitySchema(
+    entity="trace",
+    message_name="EvmTrace",
+    fields=(
+        FieldSchema("type", "string"),
+        FieldSchema("block_number", "int64"),
+        FieldSchema("transaction_hash", "string"),
+        FieldSchema("trace_id", "string"),
+        FieldSchema("parent_trace_id", "string"),
+        FieldSchema("trace_index", "int64"),
+        FieldSchema("from_address", "string"),
+        FieldSchema("to_address", "string"),
+        FieldSchema("value", "string"),
+        FieldSchema("input", "string"),
+        FieldSchema("output", "string"),
+        FieldSchema("call_type", "string"),
+        FieldSchema("trace_type", "string"),
+        FieldSchema("status", "string"),
+        FieldSchema("error", "string"),
+        FieldSchema("gas", "int64"),
+        FieldSchema("gas_used", "int64"),
+        FieldSchema("depth", "int64"),
+        FieldSchema("subtraces", "int64"),
+        FieldSchema("reward_type", "string"),
+        FieldSchema("trace_address", "int64", repeated=True),
+        FieldSchema("trace_source", "string"),
+        FieldSchema("trace_method", "string"),
+        FieldSchema("id", "string"),
+        FieldSchema("ingest_timestamp", "int64"),
+    ),
+)
+
+
+EVM_ENTITY_SCHEMAS = {
+    "block": BLOCK_SCHEMA,
+    "transaction": TRANSACTION_SCHEMA,
+    "receipt": RECEIPT_SCHEMA,
+    "log": LOG_SCHEMA,
+    "trace": TRACE_SCHEMA,
+}

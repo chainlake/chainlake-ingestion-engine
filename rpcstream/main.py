@@ -14,7 +14,9 @@ from rpcstream.sinks.kafka.producer import KafkaWriter
 
 from rpcstream.adapters.evm.identity.event_id_calculator import EventIdCalculator
 from rpcstream.adapters.evm.identity.event_time_calculator import EventTimeCalculator
+from rpcstream.adapters.evm.schema import EVM_ENTITY_SCHEMAS
 from rpcstream.adapters.evm.processor import PROCESSOR_REGISTRY
+from rpcstream.sinks.kafka.protobuf import DLQ_SCHEMA
 
 from rpcstream.planner.block_source import RealtimeBlockSource
 from rpcstream.runtime.block_tracker import BlockHeadTracker
@@ -31,7 +33,9 @@ async def main():
     # Resolve config
     runtime = resolve(config)
     logger = JsonLogger(level=config.logLevel)
-    main_topics, dlq_topics = runtime.topic_map
+    topic_maps = runtime.topic_map
+    main_topics = topic_maps.main
+    dlq_topics = topic_maps.dlq
     observability = build_observability(runtime.observability.config, runtime.pipeline.name)
     await observability.start()
 
@@ -96,6 +100,21 @@ async def main():
             time_calculator=EventTimeCalculator(),
             logger=logger,
             config=runtime.kafka.streaming,
+            producer_config=runtime.kafka.config,
+            topic_maps=topic_maps,
+            protobuf_enabled=runtime.kafka.protobuf_enabled,
+            schema_registry_url=runtime.kafka.schema_registry_url,
+            protobuf_topic_schemas={
+                **{
+                    topic_maps.main[entity]: EVM_ENTITY_SCHEMAS[entity]
+                    for entity in runtime.entities
+                    if entity in EVM_ENTITY_SCHEMAS
+                },
+                **{
+                    topic: DLQ_SCHEMA
+                    for topic in topic_maps.dlq.values()
+                },
+            },
             observability=observability,
         )
 

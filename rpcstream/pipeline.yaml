@@ -12,8 +12,8 @@ chain:
 
 # trace is currently not supported
 entities:
-  - "receipt"
-  - "log"
+  # - "receipt"
+  # - "log"
   - "block"
   - "transaction"
 
@@ -39,7 +39,7 @@ engine:
   concurrency: 10
 
 kafka:
-  profile: local   # local | k8s | aiven | msk | confluent
+  profile: aiven   # local | k8s | aiven | msk | confluent
   common:
     bootstrap_servers: "localhost:30092"
     topic_template: "{type}.{chain}.{network}.{kind}_{entity}"
@@ -50,14 +50,16 @@ kafka:
     batch_size: 100          # micro-batch size
     flush_interval_ms: 50    # max wait time
     queue_maxsize: 100       # backpressure control
+  protobuf:
+    enabled: true
 
 telemetry:
   tracing:
-    enabled: true
+    enabled: false
     endpoint: "http://localhost:4317" # http://otel-collector.observability.svc:4317
     sampleRate: 0.1 # Sample 10% of requests
 
   metrics:
-    enabled: true
+    enabled: false
     endpoint: "http://localhost:4317"
     export_interval_ms: 5000

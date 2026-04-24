@@ -6,6 +6,12 @@ class TopicSet:
     dlq: str
 
 
+@dataclass
+class TopicMaps:
+    main: dict[str, str]
+    dlq: dict[str, str]
+
+
 def normalize_entity(entity: str) -> str:
     return entity.strip().lower()
 

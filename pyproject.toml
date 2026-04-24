@@ -32,6 +32,7 @@ dependencies = [
   "httpx>=0.28.1",
   "cachetools>=7.0.6",
   "pytest>=9.0.3",
+  "protobuf>=6.33.0",
 ]
 
 [project.optional-dependencies]
@@ -52,9 +53,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.ruff]
 line-length = 100
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
 
 [tool.mypy]
 python_version = "3.11"

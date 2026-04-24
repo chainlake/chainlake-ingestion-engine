@@ -19,11 +19,16 @@ class KafkaStreaming(BaseModel):
     queue_maxsize: int = 100
 
 
+class KafkaProtobuf(BaseModel):
+    enabled: bool = True
+
+
 class KafkaConfig(BaseModel):
     profile: str
     common: KafkaCommon
     producer: KafkaProducer
     streaming: KafkaStreaming
+    protobuf: KafkaProtobuf = Field(default_factory=KafkaProtobuf)
 
 
 class ChainConfig(BaseModel):

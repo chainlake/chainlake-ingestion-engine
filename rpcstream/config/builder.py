@@ -1,7 +1,7 @@
 # build runtime configs (kafka, rpc)
 import os
 from .schema import PipelineConfig
-from rpcstream.runtime.topic import build_topics, normalize_entity
+from rpcstream.runtime.topic import TopicMaps, build_topics, normalize_entity
 
 def build_kafka_config(cfg: PipelineConfig) -> dict:
     kafka = cfg.kafka
@@ -23,9 +23,13 @@ def build_kafka_config(cfg: PipelineConfig) -> dict:
     # -------------------------
     security = profile.get("security")
     if security:
-        result["security.protocol"] = security.get("protocol")
-        if "mechanism" in security:
-            result["sasl.mechanism"] = security["mechanism"]
+        protocol = os.getenv("KAFKA_SECURITY_PROTOCOL", security.get("protocol"))
+        if protocol:
+            result["security.protocol"] = protocol
+
+        mechanism = os.getenv("KAFKA_SASL_MECHANISM", security.get("mechanism"))
+        if mechanism:
+            result["sasl.mechanism"] = mechanism
 
     # -------------------------
     # Auth
@@ -54,11 +58,24 @@ def build_kafka_config(cfg: PipelineConfig) -> dict:
     # -------------------------
     result["linger.ms"] = kafka.producer.linger_ms
     result["batch.size"] = kafka.producer.batch_size
+    result["compression.type"] = os.getenv("KAFKA_COMPRESSION_TYPE", "zstd")
 
     return result
 
 
-def build_topic_maps(cfg):
+def build_schema_registry_url() -> str | None:
+    raw = (
+        os.getenv("KAFAK_SCHEMA_REGISTRY")
+        or os.getenv("KAFKA_SCHEMA_REGISTRY")
+    )
+    if not raw:
+        return None
+    if raw.startswith(("http://", "https://")):
+        return raw
+    return f"https://{raw}"
+
+
+def build_topic_maps(cfg) -> TopicMaps:
     """
     Convert TopicSet → engine-compatible maps
     """
@@ -73,7 +90,10 @@ def build_topic_maps(cfg):
         topics[normalized] = topic_set.main
         dlq_topics[normalized] = topic_set.dlq
 
-    return topics, dlq_topics
+    return TopicMaps(
+        main=topics,
+        dlq=dlq_topics,
+    )
 
 
 def build_erpc_endpoint(cfg) -> str:

@@ -8,6 +8,8 @@ from opentelemetry.trace import Link
 
 from rpcstream.metrics.kafka import KafkaMetrics
 from rpcstream.runtime.observability.context import ObservabilityContext
+from rpcstream.sinks.kafka.admin import KafkaTopicManager
+from rpcstream.sinks.kafka.protobuf import ProtobufSerializerRegistry
 
 class KafkaWriter:
     def __init__(
@@ -17,6 +19,11 @@ class KafkaWriter:
         time_calculator,
         logger,
         config,
+        producer_config,
+        topic_maps,
+        protobuf_enabled=False,
+        schema_registry_url=None,
+        protobuf_topic_schemas=None,
         observability: ObservabilityContext | None = None,
     ):
         self.producer = producer
@@ -30,11 +37,27 @@ class KafkaWriter:
         self.batch_size = config.batch_size
         self.flush_interval = config.flush_interval_ms / 1000
         self.queue_maxsize = config.queue_maxsize
+        self.topic_maps = topic_maps
+        self.protobuf_enabled = protobuf_enabled
+        self.topic_manager = KafkaTopicManager(producer_config=producer_config, logger=logger)
+        self.protobuf_registry = None
 
         self.queue = asyncio.Queue(maxsize=self.queue_maxsize)
 
         self._running = False
         self._worker_task = None
+
+        if self.protobuf_enabled:
+            if not schema_registry_url:
+                raise ValueError(
+                    "protobuf is enabled but schema registry url is missing; set KAFAK_SCHEMA_REGISTRY"
+                )
+            self.protobuf_registry = ProtobufSerializerRegistry(
+                schema_registry_url=schema_registry_url,
+                producer_config=producer_config,
+                topic_schemas=protobuf_topic_schemas or {},
+                logger=logger,
+            )
 
     # ----------------------------
     # Delivery callback
@@ -182,7 +205,7 @@ class KafkaWriter:
                     key=event_id,
                 )
 
-                payload = json.dumps(r, separators=(",", ":"))
+                payload = self._serialize(topic, r)
 
                 retries = 0
                 while True:
@@ -214,6 +237,9 @@ class KafkaWriter:
     # Lifecycle
     # ----------------------------
     async def start(self):
+        self.topic_manager.ensure_topics(self._all_topics())
+        if self.protobuf_registry is not None:
+            self.protobuf_registry.start()
         self._running = True
         self._worker_task = asyncio.create_task(self._worker())
 
@@ -225,3 +251,14 @@ class KafkaWriter:
 
         # FORCE FINAL FLUSH
         self.producer.flush()
+
+    def _all_topics(self):
+        topics = []
+        topics.extend(self.topic_maps.main.values())
+        topics.extend(self.topic_maps.dlq.values())
+        return topics
+
+    def _serialize(self, topic, row):
+        if self.protobuf_registry is not None:
+            return self.protobuf_registry.serialize(topic, row)
+        return json.dumps(row, separators=(",", ":"))

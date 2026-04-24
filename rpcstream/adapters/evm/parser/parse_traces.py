@@ -20,6 +20,7 @@ def parse_trace_block(traces: list, block_number: int):
             parent_trace_id = build_trace_id(tx_hash, trace_address[:-1])
         
         rows.append({
+            "type": "trace",
             # identity
             "block_number": block_number,
             "transaction_hash": t.get("transactionHash"),

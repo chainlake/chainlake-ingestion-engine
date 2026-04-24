@@ -32,7 +32,9 @@ async def main():
     # Resolve config
     runtime = resolve(config)
     logger = JsonLogger(level=config.logLevel)
-    main_topics, dlq_topics = runtime.topic_map
+    topic_maps = runtime.topic_map
+    main_topics = topic_maps.main
+    dlq_topics = topic_maps.dlq
     rpc_conf = config.erpc
 
     try:

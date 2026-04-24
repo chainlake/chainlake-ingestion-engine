@@ -41,6 +41,7 @@ class KafkaWriter:
         self.protobuf_registry = None
 
         self.queue = asyncio.Queue(maxsize=self.queue_maxsize)
+        self._queue_depth = 0
 
         self._running = False
         self._worker_task = None
@@ -106,7 +107,9 @@ class KafkaWriter:
                 self.queue.put((topic, rows, linked_span_context)),
                 timeout=0.1,
             ) # batch enqueue, Apply backpressure to engine
-            # QUEUE_SIZE.set(self.queue.qsize())
+            self._queue_depth += 1
+            self.metrics.QUEUE_SIZE.add(1)
+            span.set_attribute("queue_size_after_enqueue", self._queue_depth)
 
     # ----------------------------
     # Worker loop
@@ -125,6 +128,8 @@ class KafkaWriter:
                 item = None
 
             if item:
+                self._queue_depth = max(self._queue_depth - 1, 0)
+                self.metrics.QUEUE_SIZE.add(-1)
                 topic, rows, parent_span_context = item
                 buffer.extend((topic, r, parent_span_context) for r in rows)
 
@@ -265,6 +270,10 @@ class KafkaWriter:
 
         if self._worker_task:
             await self._worker_task
+
+        if self._queue_depth > 0:
+            self.metrics.QUEUE_SIZE.add(-self._queue_depth)
+            self._queue_depth = 0
 
         # FORCE FINAL FLUSH
         self.producer.flush()

@@ -17,21 +17,21 @@ class ClientMetrics:
             return
 
         self.REQUEST_COUNTER = meter.create_counter(
-            "rpc_requests_total"
+            "rpcstream_rpc_requests_total"
         )
 
         self.REQUEST_SUBMITTED_COUNTER = meter.create_counter(
-            "rpc_submitted_total"
+            "rpcstream_rpc_submitted_total"
         )
 
         self.INFLIGHT_GAUGE = meter.create_up_down_counter(
-            "rpc_inflight"
+            "rpcstream_rpc_inflight"
         )
 
         self.RETRY_COUNTER = meter.create_counter(
-            "rpc_retries_total"
+            "rpcstream_rpc_retries_total"
         )
 
         self.LATENCY_HISTOGRAM = meter.create_histogram(
-            "rpc_latency_ms", unit="ms"
+            "rpcstream_rpc_latency_ms", unit="ms"
         )

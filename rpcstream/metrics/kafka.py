@@ -20,38 +20,38 @@ class KafkaMetrics:
 
         # Throughput
         self.MESSAGE_COUNTER = meter.create_counter(
-            "kafka_messages_total",
+            "rpcstream_kafka_messages_total",
         )
 
         self.BATCH_COUNTER = meter.create_counter(
-            "kafka_batches_total",
+            "rpcstream_kafka_batches_total",
         )
 
         # Latency
         self.BATCH_LATENCY = meter.create_histogram(
-            "kafka_batch_latency_ms",
+            "rpcstream_kafka_batch_latency_ms",
             unit="ms",
         )
 
         self.PRODUCE_LATENCY = meter.create_histogram(
-            "kafka_produce_latency_ms",
+            "rpcstream_kafka_produce_latency_ms",
             unit="ms",
         )
 
         # Backpressure
         self.QUEUE_SIZE = meter.create_up_down_counter(
-            "kafka_queue_size",
+            "rpcstream_kafka_queue_size",
         )
 
         self.BUFFER_RETRY_COUNTER = meter.create_counter(
-            "kafka_buffer_retries_total",
+            "rpcstream_kafka_buffer_retries_total",
         )
 
         # Reliability
         self.DELIVERY_SUCCESS = meter.create_counter(
-            "kafka_delivery_success_total",
+            "rpcstream_kafka_delivery_success_total",
         )
 
         self.DELIVERY_ERROR = meter.create_counter(
-            "kafka_delivery_errors_total",
+            "rpcstream_kafka_delivery_errors_total",
         )

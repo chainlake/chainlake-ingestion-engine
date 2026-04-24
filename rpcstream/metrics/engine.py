@@ -22,50 +22,50 @@ class EngineMetrics:
 
         # Throughput
         self.BLOCK_COUNTER = meter.create_counter(
-            "engine_blocks_total",
+            "rpcstream_engine_blocks_total",
         )
 
         self.ROW_COUNTER = meter.create_counter(
-            "engine_rows_total",
+            "rpcstream_engine_rows_total",
         )
 
         self.DLQ_COUNTER = meter.create_counter(
-            "engine_dlq_total",
+            "rpcstream_engine_dlq_total",
         )
 
         # Latency
         self.BLOCK_LATENCY = meter.create_histogram(
-            "engine_block_latency_ms",
+            "rpcstream_engine_block_latency_ms",
             unit="ms",
         )
 
         self.QUEUE_WAIT = meter.create_histogram(
-            "engine_queue_wait_ms",
+            "rpcstream_engine_queue_wait_ms",
             unit="ms",
         )
 
         self.TOTAL_TIME = meter.create_histogram(
-            "engine_total_time_ms",
+            "rpcstream_engine_total_time_ms",
             unit="ms",
         )
 
         # Load
         self.INFLIGHT = meter.create_up_down_counter(
-            "engine_inflight",
+            "rpcstream_engine_inflight",
         )
 
         # Errors
         self.ERROR_COUNTER = meter.create_counter(
-            "engine_errors_total",
+            "rpcstream_engine_errors_total",
         )
 
         # lag
         self.CHAIN_LAG = meter.create_histogram(
-            name="engine_chain_lag",
+            name="rpcstream_engine_chain_lag",
             description="point-in-time lag at processing moment",
         )
 
         self.INGESTION_LAG = meter.create_histogram(
-            name="engine_ingestion_lag",
+            name="rpcstream_engine_ingestion_lag",
             description="TRUE pipeline lag (monotonic)",
         )

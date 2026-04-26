@@ -14,8 +14,8 @@ chain:
 entities:
   # - "receipt"
   # - "log"
-  - "block"
-  # - "transaction"
+  # - "block"
+  - "transaction"
 
 erpc:
   project_id: main

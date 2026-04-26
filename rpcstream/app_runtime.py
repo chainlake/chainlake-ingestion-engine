@@ -82,7 +82,11 @@ def build_runtime_stack(
     )
     fetcher = EvmRpcFetcher(scheduler, runtime.entities, logger, tracker)
     checkpoint_manager = None
+    checkpoint_store = None
     resume_cursor = None
+    eos_active = with_checkpoint and runtime.kafka.eos_enabled
+    if eos_active and not runtime.checkpoint.enabled:
+        raise ValueError("kafka.eos.enabled requires pipeline.checkpoint.enabled=true")
     if with_checkpoint and runtime.checkpoint.enabled:
         checkpoint_store = KafkaCheckpointStore(
             topic=runtime.checkpoint.topic,
@@ -93,13 +97,14 @@ def build_runtime_stack(
         checkpoint_record = checkpoint_store.load()
         if checkpoint_record is not None:
             resume_cursor = checkpoint_record.cursor
-        checkpoint_manager = CheckpointManager(
-            store=checkpoint_store,
-            initial_cursor=resume_cursor,
-            flush_interval_ms=runtime.checkpoint.flush_interval_ms,
-            commit_batch_size=runtime.checkpoint.commit_batch_size,
-            logger=logger,
-        )
+        if not eos_active:
+            checkpoint_manager = CheckpointManager(
+                store=checkpoint_store,
+                initial_cursor=resume_cursor,
+                flush_interval_ms=runtime.checkpoint.flush_interval_ms,
+                commit_batch_size=runtime.checkpoint.commit_batch_size,
+                logger=logger,
+            )
     processors = {
         entity: PROCESSOR_REGISTRY[entity]
         for entity in runtime.entities
@@ -117,6 +122,8 @@ def build_runtime_stack(
         schema_registry_url=runtime.kafka.schema_registry_url,
         protobuf_topic_schemas=build_protobuf_topic_schemas(runtime.topic_map, runtime.entities),
         observability=observability,
+        eos_enabled=eos_active,
+        eos_init_timeout_sec=runtime.kafka.eos_init_timeout_sec,
     )
     engine = IngestionEngine(
         fetcher=fetcher,
@@ -131,6 +138,8 @@ def build_runtime_stack(
         logger=logger,
         observability=observability,
         checkpoint_manager=checkpoint_manager,
+        checkpoint_store=checkpoint_store,
+        eos_enabled=eos_active,
     )
 
     return RuntimeStack(

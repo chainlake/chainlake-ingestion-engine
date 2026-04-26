@@ -24,11 +24,14 @@ class KafkaWriter:
         schema_registry_url=None,
         protobuf_topic_schemas=None,
         observability: ObservabilityContext | None = None,
+        eos_enabled=False,
+        eos_init_timeout_sec=30.0,
     ):
         self.producer = producer
         self.id_calc = id_calculator
         self.time_calc = time_calculator
         self.logger = logger
+        self.producer_config = producer_config
         self.observability = observability or ObservabilityContext.disabled()
         self._tracer = self.observability.get_tracer(__name__)
         self.metrics = KafkaMetrics(self.observability.get_meter("rpcstream.kafka"))
@@ -38,6 +41,8 @@ class KafkaWriter:
         self.queue_maxsize = config.queue_maxsize
         self.topic_maps = topic_maps
         self.protobuf_enabled = protobuf_enabled
+        self.eos_enabled = eos_enabled
+        self.eos_init_timeout_sec = eos_init_timeout_sec
         self.protobuf_registry = None
 
         self.queue = asyncio.Queue(maxsize=self.queue_maxsize)
@@ -208,17 +213,11 @@ class KafkaWriter:
             self.metrics.BATCH_COUNTER.add(1)
             
             for topic, r, _, delivery_tracker in items:
-                self.metrics.MESSAGE_COUNTER.add(1, {"topic": topic})
-                partition_key = r.pop("kafka_partition_key", None)
-                event_id = r.get("id") or self.id_calc.calculate_event_id(r)
-                
-                # fallback for DLQ / unknown schema
-                if not event_id:
-                    event_id = f"dlq-{r.get('block_number') or r.get('block')}-{time.time_ns()}"
-
-                r["id"] = event_id
-                r["ingest_timestamp"] = self.time_calc.calculate_ingest_timestamp()
-                kafka_key = partition_key or event_id
+                try:
+                    kafka_key, payload = self._prepare_message(topic, r)
+                except Exception as exc:
+                    self._fail_delivery_tracker(delivery_tracker, exc)
+                    raise
 
                 if self.logger:
                     self.logger.debug(
@@ -226,12 +225,6 @@ class KafkaWriter:
                         topic=topic,
                         key=kafka_key,
                     )
-
-                try:
-                    payload = self._serialize(topic, r)
-                except Exception as exc:
-                    self._fail_delivery_tracker(delivery_tracker, exc)
-                    raise
 
                 retries = 0
                 while True:
@@ -262,6 +255,58 @@ class KafkaWriter:
             latency = (time.time() - start) * 1000
             self.metrics.BATCH_LATENCY.record(latency)
             span.set_attribute("batch_latency_ms", latency)
+
+    async def send_transaction(self, topic_rows, checkpoint_topic, checkpoint_key, checkpoint_value):
+        self._send_transaction_sync(
+            topic_rows,
+            checkpoint_topic,
+            checkpoint_key,
+            checkpoint_value,
+        )
+
+    def _send_transaction_sync(self, topic_rows, checkpoint_topic, checkpoint_key, checkpoint_value):
+        if not self.eos_enabled:
+            raise RuntimeError("Kafka EOS transaction mode is not enabled")
+
+        self.producer.begin_transaction()
+        try:
+            for topic, rows in topic_rows:
+                for row in rows:
+                    kafka_key, payload = self._prepare_message(topic, row)
+                    self.producer.produce(
+                        topic=topic,
+                        key=kafka_key,
+                        value=payload,
+                        callback=self.delivery_report,
+                    )
+                    self.producer.poll(0)
+
+            self.producer.produce(
+                topic=checkpoint_topic,
+                key=checkpoint_key,
+                value=checkpoint_value,
+                callback=self.delivery_report,
+            )
+            self.producer.poll(0)
+            self.producer.commit_transaction()
+        except Exception:
+            self.producer.abort_transaction()
+            raise
+
+    def _prepare_message(self, topic, row):
+        self.metrics.MESSAGE_COUNTER.add(1, {"topic": topic})
+        partition_key = row.pop("kafka_partition_key", None)
+        event_id = row.get("id") or self.id_calc.calculate_event_id(row)
+
+        if not event_id:
+            event_id = f"dlq-{row.get('block_number') or row.get('block')}-{time.time_ns()}"
+
+        row["id"] = event_id
+        row["ingest_timestamp"] = self.time_calc.calculate_ingest_timestamp()
+        kafka_key = partition_key or event_id
+
+        payload = self._serialize(topic, row)
+        return kafka_key, payload
 
     def _delivery_callback(self, delivery_tracker):
         def callback(err, msg):
@@ -310,6 +355,22 @@ class KafkaWriter:
                     schema_registry=self.protobuf_registry.schema_registry_url,
                     topic_count=len(self.protobuf_registry.topic_schemas),
                     elapsed_ms=round((time.time() - warmup_started) * 1000, 2),
+                )
+
+        if self.eos_enabled:
+            if self.logger:
+                self.logger.info(
+                    "kafka.eos_init_started",
+                    component="sink",
+                    transactional_id=self.producer_config.get("transactional.id"),
+                    timeout_sec=self.eos_init_timeout_sec,
+                )
+            self.producer.init_transactions(self.eos_init_timeout_sec)
+            if self.logger:
+                self.logger.info(
+                    "kafka.eos_init_complete",
+                    component="sink",
+                    transactional_id=self.producer_config.get("transactional.id"),
                 )
 
         self._running = True

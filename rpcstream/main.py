@@ -80,6 +80,7 @@ async def main():
     client = None
     tracker = None
     checkpoint_manager = None
+    checkpoint_store = None
     resume_cursor = None
     
     try:
@@ -122,6 +123,9 @@ async def main():
         # -------------------------
         # CHECKPOINT
         # -------------------------
+        if runtime.kafka.eos_enabled and not runtime.checkpoint.enabled:
+            raise ValueError("kafka.eos.enabled requires pipeline.checkpoint.enabled=true")
+
         if runtime.checkpoint.enabled:
             checkpoint_store = KafkaCheckpointStore(
                 topic=runtime.checkpoint.topic,
@@ -138,13 +142,14 @@ async def main():
             checkpoint_record = await asyncio.to_thread(checkpoint_store.load)
             if checkpoint_record is not None:
                 resume_cursor = checkpoint_record.cursor
-            checkpoint_manager = CheckpointManager(
-                store=checkpoint_store,
-                initial_cursor=resume_cursor,
-                flush_interval_ms=runtime.checkpoint.flush_interval_ms,
-                commit_batch_size=runtime.checkpoint.commit_batch_size,
-                logger=logger,
-            )
+            if not runtime.kafka.eos_enabled:
+                checkpoint_manager = CheckpointManager(
+                    store=checkpoint_store,
+                    initial_cursor=resume_cursor,
+                    flush_interval_ms=runtime.checkpoint.flush_interval_ms,
+                    commit_batch_size=runtime.checkpoint.commit_batch_size,
+                    logger=logger,
+                )
 
         # -------------------------
         # PROCESSOR
@@ -173,6 +178,8 @@ async def main():
             schema_registry_url=runtime.kafka.schema_registry_url,
             protobuf_topic_schemas=build_protobuf_topic_schemas(topic_maps, runtime.entities),
             observability=observability,
+            eos_enabled=runtime.kafka.eos_enabled,
+            eos_init_timeout_sec=runtime.kafka.eos_init_timeout_sec,
         )
 
         # -------------------------
@@ -191,6 +198,8 @@ async def main():
             logger=logger,
             observability=observability,
             checkpoint_manager=checkpoint_manager,
+            checkpoint_store=checkpoint_store,
+            eos_enabled=runtime.kafka.eos_enabled,
         )
         
         # -------------------------

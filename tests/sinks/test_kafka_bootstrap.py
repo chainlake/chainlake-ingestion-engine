@@ -135,3 +135,68 @@ def test_kafka_writer_wait_delivery_future_resolves_after_callback():
         return future.done(), result
 
     assert asyncio.run(run()) == (True, True)
+
+
+def test_kafka_writer_send_transaction_commits_business_and_checkpoint():
+    class DummyProducer:
+        def __init__(self):
+            self.events = []
+
+        def init_transactions(self, timeout=None):
+            self.events.append(("init", timeout))
+
+        def begin_transaction(self):
+            self.events.append(("begin",))
+
+        def produce(self, topic, key, value, callback=None):
+            self.events.append(("produce", topic, key, value))
+            if callback:
+                callback(None, SimpleNamespace(topic=lambda: topic, partition=lambda: 0, offset=lambda: 1))
+
+        def poll(self, _timeout):
+            return None
+
+        def commit_transaction(self):
+            self.events.append(("commit",))
+
+        def abort_transaction(self):
+            self.events.append(("abort",))
+
+        def flush(self):
+            return None
+
+    producer = DummyProducer()
+    writer = KafkaWriter(
+        producer=producer,
+        id_calculator=SimpleNamespace(calculate_event_id=lambda row: row["id"]),
+        time_calculator=SimpleNamespace(calculate_ingest_timestamp=lambda: 1),
+        logger=None,
+        config=SimpleNamespace(batch_size=10, flush_interval_ms=1, queue_maxsize=10),
+        producer_config={
+            "bootstrap.servers": "localhost:9092",
+            "transactional.id": "tx-1",
+        },
+        topic_maps=SimpleNamespace(main={"block": "topic-a"}, dlq="dlq.ingestion"),
+        protobuf_enabled=False,
+        eos_enabled=True,
+        eos_init_timeout_sec=12,
+    )
+
+    async def run():
+        await writer.start()
+        await writer.send_transaction(
+            [("topic-a", [{"id": "evt-1", "type": "block"}])],
+            "checkpoint-topic",
+            "checkpoint-key",
+            b'{"cursor":1}',
+        )
+        await writer.close()
+
+    asyncio.run(run())
+
+    assert ("init", 12) in producer.events
+    assert producer.events[1] == ("begin",)
+    assert ("produce", "topic-a", "evt-1", '{"id":"evt-1","type":"block","ingest_timestamp":1}') in producer.events
+    assert ("produce", "checkpoint-topic", "checkpoint-key", b'{"cursor":1}') in producer.events
+    assert ("commit",) in producer.events
+    assert ("abort",) not in producer.events

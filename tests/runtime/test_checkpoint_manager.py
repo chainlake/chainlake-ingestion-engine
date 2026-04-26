@@ -94,5 +94,6 @@ def test_kafka_checkpoint_store_consumer_config_enables_partition_eof():
     config = store._consumer_config()
 
     assert config["enable.partition.eof"] is True
+    assert config["isolation.level"] == "read_committed"
     assert config["auto.offset.reset"] == "earliest"
     assert "linger.ms" not in config

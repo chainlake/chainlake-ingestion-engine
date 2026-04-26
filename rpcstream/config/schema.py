@@ -40,12 +40,22 @@ class KafkaProtobuf(BaseModel):
     enabled: bool = True
 
 
+class KafkaEos(BaseModel):
+    enabled: bool = False
+    transactional_id_template: str = (
+        "{pipeline}.{chain_uid}.{mode}.{entities}.{hostname}.{pid}"
+    )
+    init_timeout_sec: float = 30.0
+    transaction_timeout_ms: int = 60000
+
+
 class KafkaConfig(BaseModel):
     connection: KafkaConnection
     common: KafkaCommon
     producer: KafkaProducer
     streaming: KafkaStreaming
     protobuf: KafkaProtobuf = Field(default_factory=KafkaProtobuf)
+    eos: KafkaEos = Field(default_factory=KafkaEos)
 
 
 class ChainConfig(BaseModel):
@@ -91,7 +101,7 @@ class CheckpointConfig(BaseModel):
 
 
 class PipelineConfigModel(BaseModel):
-    name: str
+    name: str | None = None
     mode: str
     start_block: str | int | None = None
     end_block: str | int | None = None
@@ -101,6 +111,12 @@ class PipelineConfigModel(BaseModel):
     def validate_mode_fields(self):
         mode = (self.mode or "").strip().lower()
         self.mode = mode
+
+        if self.name is not None:
+            name = str(self.name).strip()
+            if not name:
+                raise ValueError("pipeline.name must not be empty")
+            self.name = name
 
         if mode not in {"realtime", "backfill"}:
             raise ValueError("pipeline.mode must be either 'realtime' or 'backfill'")

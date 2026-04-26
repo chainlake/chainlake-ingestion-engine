@@ -31,6 +31,8 @@ class IngestionEngine:
         logger=None,
         observability: ObservabilityContext | None = None,
         checkpoint_manager=None,
+        checkpoint_store=None,
+        eos_enabled=False,
     ):
         self.fetcher = fetcher
         self.processors = processors # e.g. {"block": BlockProcessor(), "transaction": TransactionProcessor(), ...}
@@ -56,6 +58,8 @@ class IngestionEngine:
         self._tracer = self.observability.get_tracer(__name__)
         self.metrics = EngineMetrics(self.observability.get_meter("rpcstream.engine"))
         self.checkpoint_manager = checkpoint_manager
+        self.checkpoint_store = checkpoint_store
+        self.eos_enabled = eos_enabled
         self._checkpoint_tasks = set()
 
     async def run_stream(self, block_source, shutdown_event: asyncio.Event | None = None):
@@ -68,7 +72,8 @@ class IngestionEngine:
             await self.checkpoint_manager.start()
             checkpoint_started = True
 
-        queue = asyncio.Queue(maxsize=1000)
+        worker_count = 1 if self.eos_enabled else self.concurrency
+        queue = asyncio.Queue(maxsize=1 if self.eos_enabled else 1000)
 
         async def producer():
             try:
@@ -81,7 +86,7 @@ class IngestionEngine:
                     await queue.put(block)
             finally:
                 # Signal workers to drain and stop after queued blocks are processed.
-                for _ in range(self.concurrency):
+                for _ in range(worker_count):
                     await queue.put(None)
 
         async def worker():
@@ -100,7 +105,7 @@ class IngestionEngine:
         try:
             workers = [
                 asyncio.create_task(worker())
-                for _ in range(self.concurrency)
+                for _ in range(worker_count)
             ]
 
             await producer()
@@ -162,6 +167,7 @@ class IngestionEngine:
         current_entity = "unknown"
         success = True
         delivery_futures = []
+        transactional_topic_rows = []
         try:
             # =========================
             # Span for the entire streaming process
@@ -251,13 +257,16 @@ class IngestionEngine:
 
                         if not topic:
                             continue
-                        delivery_future = await self.sink.send(
-                            topic,
-                            rows,
-                            wait_delivery=self.checkpoint_manager is not None,
-                        )
-                        if delivery_future is not None:
-                            delivery_futures.append(delivery_future)
+                        if self.eos_enabled:
+                            transactional_topic_rows.append((topic, rows))
+                        else:
+                            delivery_future = await self.sink.send(
+                                topic,
+                                rows,
+                                wait_delivery=self.checkpoint_manager is not None,
+                            )
+                            if delivery_future is not None:
+                                delivery_futures.append(delivery_future)
                         
                         
                     except Exception as e:
@@ -310,6 +319,18 @@ class IngestionEngine:
             self.metrics.INFLIGHT.add(-1)
             total_ms = (time.time() - start_total) * 1000
             self.metrics.TOTAL_TIME.record(total_ms, {"entity": current_entity})
+
+        if success and self.eos_enabled:
+            checkpoint_key, checkpoint_value = self.checkpoint_store.build_record(
+                block_number,
+                status="running",
+            )
+            await self.sink.send_transaction(
+                transactional_topic_rows,
+                self.checkpoint_store.topic,
+                checkpoint_key,
+                checkpoint_value,
+            )
         return success, delivery_futures
 
     async def _finalize_checkpoint(self, block_number, success, delivery_futures):

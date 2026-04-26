@@ -1,15 +1,12 @@
 logLevel: info
 
 pipeline:
-  name: "bsc_mainnet_ingestion"
   mode: "realtime"
   start_block: "latest"
   checkpoint:
     enabled: false
 
 chain:
-  uid: "evm:56"
-  type: "evm"
   name: "bsc"
   network: "mainnet"
 
@@ -18,7 +15,7 @@ entities:
   # - "receipt"
   # - "log"
   - "block"
- # - "transaction"
+  # - "transaction"
 
 erpc:
   project_id: main
@@ -94,6 +91,11 @@ kafka:
     queue_maxsize: 100       # backpressure control
   protobuf:
     enabled: true
+  eos:
+    enabled: false
+    transactional_id_template: "{pipeline}.{chain_uid}.{mode}.{entities}.{hostname}.{pid}"
+    init_timeout_sec: 30
+    transaction_timeout_ms: 60000
 
 telemetry:
   tracing:

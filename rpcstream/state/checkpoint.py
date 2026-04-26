@@ -159,11 +159,7 @@ class KafkaCheckpointStore:
     async def write(self, cursor: int, status: str = "running", error: str | None = None) -> None:
         await asyncio.to_thread(self._write_sync, cursor, status, error)
 
-    def _write_sync(self, cursor: int, status: str, error: str | None) -> None:
-        from confluent_kafka import Producer
-
-        if self._producer is None:
-            self._producer = Producer(self.producer_config)
+    def build_record(self, cursor: int, status: str = "running", error: str | None = None) -> tuple[str, bytes]:
         record = CheckpointRecord(
             cursor=cursor,
             status=status,
@@ -171,10 +167,21 @@ class KafkaCheckpointStore:
             identity=self.identity,
             error=error,
         )
+        return (
+            self.identity.key,
+            json.dumps(record.to_dict(), separators=(",", ":")).encode("utf-8"),
+        )
+
+    def _write_sync(self, cursor: int, status: str, error: str | None) -> None:
+        from confluent_kafka import Producer
+
+        if self._producer is None:
+            self._producer = Producer(self.producer_config)
+        key, value = self.build_record(cursor, status=status, error=error)
         self._producer.produce(
             topic=self.topic,
-            key=self.identity.key,
-            value=json.dumps(record.to_dict(), separators=(",", ":")),
+            key=key,
+            value=value,
         )
         self._producer.flush()
         if self.logger:
@@ -204,6 +211,7 @@ class KafkaCheckpointStore:
                 "group.id": f"checkpoint-loader-{hashlib.sha256(self.identity.key.encode()).hexdigest()}",
                 "enable.auto.commit": False,
                 "enable.partition.eof": True,
+                "isolation.level": "read_committed",
                 "auto.offset.reset": "earliest",
             }
         )

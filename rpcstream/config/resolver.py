@@ -1,22 +1,27 @@
+from dataclasses import dataclass
+from typing import Dict, Any
+
 from rpcstream.config.builder import (
     build_erpc_endpoint,
     build_kafka_config,
     build_schema_registry_url,
     build_topic_maps,
 )
+from rpcstream.config.naming import build_pipeline_name
+from rpcstream.config.profiles.store import get_chain_profile
 from rpcstream.runtime.observability.config import ObservabilityConfig
 from rpcstream.runtime.topic import TopicMaps
-    
-from dataclasses import dataclass
-from typing import Dict, Any
 
 
 @dataclass
 class KafkaRuntime:
-    config: Dict[str, Any] 
+    config: Dict[str, Any]
     streaming: any
     protobuf_enabled: bool
     schema_registry_url: str | None
+    eos_enabled: bool
+    transactional_id: str | None
+    eos_init_timeout_sec: float
 
 
 @dataclass
@@ -25,7 +30,7 @@ class CheckpointRuntime:
     topic: str
     flush_interval_ms: int
     commit_batch_size: int
-    
+
 @dataclass
 class ClientRuntime:
     base_url: str
@@ -80,14 +85,20 @@ class RuntimeConfig:
     entities: list[str]
     observability: ObservabilityRuntime
 
-    
+
 def resolve(cfg) -> RuntimeConfig:
+    chain_profile = get_chain_profile(cfg.chain.name, cfg.chain.network)
+
+    kafka_config = build_kafka_config(cfg)
 
     kafka = KafkaRuntime(
-        config=build_kafka_config(cfg),
+        config=kafka_config,
         streaming=cfg.kafka.streaming,
         protobuf_enabled=cfg.kafka.protobuf.enabled,
         schema_registry_url=build_schema_registry_url(),
+        eos_enabled=cfg.kafka.eos.enabled,
+        transactional_id=kafka_config.get("transactional.id"),
+        eos_init_timeout_sec=cfg.kafka.eos.init_timeout_sec,
     )
 
     client = ClientRuntime(
@@ -112,18 +123,26 @@ def resolve(cfg) -> RuntimeConfig:
     )
 
     pipeline = PipelineRuntime(
-        name=cfg.pipeline.name,
+        name=cfg.pipeline.name
+        or build_pipeline_name(
+            chain_name=chain_profile.chain_name,
+            network=chain_profile.network,
+            mode=cfg.pipeline.mode,
+            start_block=cfg.pipeline.start_block,
+            end_block=cfg.pipeline.end_block,
+            checkpoint_enabled=cfg.pipeline.checkpoint.enabled,
+        ),
         mode=cfg.pipeline.mode,
         start_block=cfg.pipeline.start_block,
         end_block=cfg.pipeline.end_block,
     )
 
     chain = ChainRuntime(
-        uid=cfg.chain.uid,
-        type=cfg.chain.type,
-        name=cfg.chain.name,
-        network=cfg.chain.network,
-        network_label=f"{cfg.chain.name}-{cfg.chain.network}",
+        uid=chain_profile.chain_uid,
+        type=chain_profile.chain_type,
+        name=chain_profile.chain_name,
+        network=chain_profile.network,
+        network_label=f"{chain_profile.chain_name}-{chain_profile.network}",
     )
 
     topic_map = build_topic_maps(cfg)

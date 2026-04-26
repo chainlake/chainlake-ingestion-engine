@@ -145,7 +145,13 @@ class PipelineConfigModel(BaseModel):
         return self
 
 class TrackerConfig(BaseModel):
-    poll_interval: float
+    poll_interval: float = 0.5
+
+    @model_validator(mode="after")
+    def validate_poll_interval(self):
+        if self.poll_interval <= 0:
+            raise ValueError("tracker.poll_interval must be > 0")
+        return self
 
 
 class EngineConfig(BaseModel):
@@ -160,7 +166,7 @@ class PipelineConfig(BaseModel):
     chain: ChainConfig
     entities: list[str]
     erpc: ErpcConfig
-    tracker: TrackerConfig
+    tracker: TrackerConfig = Field(default_factory=TrackerConfig)
     engine: EngineConfig
     checkpoint: CheckpointConfig = Field(default_factory=CheckpointConfig)
     kafka: KafkaConfig

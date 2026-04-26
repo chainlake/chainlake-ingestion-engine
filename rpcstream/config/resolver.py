@@ -65,6 +65,7 @@ class ChainRuntime:
     type: str
     name: str
     network: str
+    interval_seconds: float
     network_label: str
 
 @dataclass
@@ -118,10 +119,6 @@ def resolve(cfg) -> RuntimeConfig:
         concurrency=cfg.engine.concurrency
     )
 
-    tracker = TrackerRuntime(
-        poll_interval=cfg.tracker.poll_interval
-    )
-
     pipeline = PipelineRuntime(
         name=cfg.pipeline.name
         or build_pipeline_name(
@@ -142,11 +139,15 @@ def resolve(cfg) -> RuntimeConfig:
         type=chain_profile.chain_type,
         name=chain_profile.chain_name,
         network=chain_profile.network,
+        interval_seconds=chain_profile.interval_seconds,
         network_label=f"{chain_profile.chain_name}-{chain_profile.network}",
     )
 
     topic_map = build_topic_maps(cfg)
     checkpoint_cfg = _resolve_checkpoint_config(cfg)
+    tracker = TrackerRuntime(
+        poll_interval=chain_profile.interval_seconds * cfg.tracker.poll_interval
+    )
 
     checkpoint = CheckpointRuntime(
         enabled=checkpoint_cfg.enabled,

@@ -83,7 +83,7 @@ def _fill_pipeline_name(pipeline_cfg: dict, chain_cfg: dict) -> dict:
         checkpoint_enabled=(
             pipeline.get("checkpoint", {}).get("enabled")
             if isinstance(pipeline.get("checkpoint"), dict)
-            else pipeline.get("checkpoint_enabled")
+            else pipeline.get("checkpoint_enabled", True)
         ),
     )
     return pipeline

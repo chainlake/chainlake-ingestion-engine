@@ -13,6 +13,7 @@ class ChainProfile:
     chain_name: str
     chain_type: str
     network: str
+    interval_seconds: float
 
 
 def default_chain_profiles_path() -> Path:
@@ -38,11 +39,16 @@ def _load_profiles_from_yaml(path: Path) -> list[ChainProfile]:
         chain_name = meta.get("chain_name")
         chain_type = meta.get("chain_type")
         network = meta.get("network")
+        interval_seconds = (entry or {}).get("data", {}).get("interval_seconds")
 
         if not chain_uid or not chain_name or not chain_type or not network:
             raise ValueError(
                 "chain profile entries must define meta.chain_uid, meta.chain_name, "
                 "meta.chain_type and meta.network"
+            )
+        if interval_seconds is None:
+            raise ValueError(
+                "chain profile entries must define data.interval_seconds"
             )
 
         profiles.append(
@@ -51,6 +57,7 @@ def _load_profiles_from_yaml(path: Path) -> list[ChainProfile]:
                 chain_name=str(chain_name),
                 chain_type=str(chain_type),
                 network=str(network),
+                interval_seconds=float(interval_seconds),
             )
         )
 

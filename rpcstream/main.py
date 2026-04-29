@@ -16,6 +16,7 @@ from rpcstream.sinks.kafka.producer import KafkaWriter
 
 from rpcstream.adapters.evm.identity.event_id_calculator import EventIdCalculator
 from rpcstream.adapters.evm.identity.event_time_calculator import EventTimeCalculator
+from rpcstream.adapters.evm.enrich import EvmEnricher
 from rpcstream.adapters.evm.processor import PROCESSOR_REGISTRY
 from rpcstream.sinks.kafka.bootstrap import build_protobuf_topic_schemas
 
@@ -23,7 +24,7 @@ from rpcstream.planner.block_source import build_block_source
 from rpcstream.runtime.block_tracker import BlockHeadTracker
 from rpcstream.state.checkpoint import (
     CheckpointManager,
-    KafkaCheckpointStore,
+    KafkaCheckpointReader,
     build_checkpoint_identity,
 )
 
@@ -83,10 +84,13 @@ async def main():
     client = None
     tracker = None
     checkpoint_manager = None
-    checkpoint_store = None
+    checkpoint_reader = None
+    checkpoint_identity = None
     resume_cursor = None
     
     try:
+        internal_entities = getattr(runtime, "internal_entities", runtime.entities)
+
         client = JsonRpcClient(
             base_url=runtime.client.base_url,
             timeout_sec=runtime.client.timeout_sec,
@@ -121,7 +125,7 @@ async def main():
         )
 
         # Pass tracker to fetcher
-        fetcher = EvmRpcFetcher(scheduler, runtime.entities, logger, tracker)
+        fetcher = EvmRpcFetcher(scheduler, internal_entities, logger, tracker)
 
         # -------------------------
         # CHECKPOINT
@@ -130,29 +134,27 @@ async def main():
             raise ValueError("kafka.eos.enabled requires pipeline.checkpoint.enabled=true")
 
         if runtime.checkpoint.enabled:
-            checkpoint_store = KafkaCheckpointStore(
+            checkpoint_identity = build_checkpoint_identity(runtime)
+            checkpoint_reader = KafkaCheckpointReader(
                 topic=runtime.checkpoint.topic,
                 producer_config=runtime.kafka.config,
-                identity=build_checkpoint_identity(runtime),
+                identity=checkpoint_identity,
+                schema_registry_url=(
+                    runtime.kafka.schema_registry_url
+                    if runtime.kafka.protobuf_enabled
+                    else None
+                ),
                 logger=logger,
             )
             logger.info(
                 "checkpoint.load_started",
                 component="checkpoint",
                 topic=runtime.checkpoint.topic,
-                key=checkpoint_store.identity.key,
+                key=checkpoint_reader.identity.key,
             )
-            checkpoint_record = await asyncio.to_thread(checkpoint_store.load)
+            checkpoint_record = await asyncio.to_thread(checkpoint_reader.load)
             if checkpoint_record is not None:
                 resume_cursor = checkpoint_record.cursor
-            if not runtime.kafka.eos_enabled:
-                checkpoint_manager = CheckpointManager(
-                    store=checkpoint_store,
-                    initial_cursor=resume_cursor,
-                    flush_interval_ms=runtime.checkpoint.flush_interval_ms,
-                    commit_batch_size=runtime.checkpoint.commit_batch_size,
-                    logger=logger,
-                )
 
         # -------------------------
         # PROCESSOR
@@ -160,7 +162,7 @@ async def main():
         # Load processors dynamically based on the YAML configuration
         processors = {
             entity: PROCESSOR_REGISTRY[entity]
-            for entity in runtime.entities
+            for entity in internal_entities
         }
                 
         
@@ -185,12 +187,24 @@ async def main():
             eos_init_timeout_sec=runtime.kafka.eos_init_timeout_sec,
         )
 
+        if runtime.checkpoint.enabled and not runtime.kafka.eos_enabled:
+            checkpoint_manager = CheckpointManager(
+                sink=kafka_write,
+                topic=runtime.checkpoint.topic,
+                identity=checkpoint_identity,
+                initial_cursor=resume_cursor,
+                flush_interval_ms=runtime.checkpoint.flush_interval_ms,
+                commit_batch_size=runtime.checkpoint.commit_batch_size,
+                logger=logger,
+            )
+
         # -------------------------
         # ENGINE
         # -------------------------
         engine = IngestionEngine(
             fetcher=fetcher,
             processors=processors,
+            enricher=EvmEnricher(),
             sink=kafka_write,
             topics=main_topics,
             dlq_topic=dlq_topics,
@@ -201,7 +215,7 @@ async def main():
             logger=logger,
             observability=observability,
             checkpoint_manager=checkpoint_manager,
-            checkpoint_store=checkpoint_store,
+            checkpoint_reader=checkpoint_reader,
             eos_enabled=runtime.kafka.eos_enabled,
         )
         

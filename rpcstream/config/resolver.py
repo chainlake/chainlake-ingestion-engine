@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Dict, Any
 
+from rpcstream.adapters.evm.dag import resolve_internal_entities
 from rpcstream.config.builder import (
     build_erpc_endpoint,
     build_kafka_config,
@@ -84,6 +85,7 @@ class RuntimeConfig:
     pipeline: PipelineRuntime
     chain: ChainRuntime
     entities: list[str]
+    internal_entities: list[str]
     observability: ObservabilityRuntime
 
 
@@ -96,7 +98,7 @@ def resolve(cfg) -> RuntimeConfig:
         config=kafka_config,
         streaming=cfg.kafka.streaming,
         protobuf_enabled=cfg.kafka.protobuf.enabled,
-        schema_registry_url=build_schema_registry_url(),
+        schema_registry_url=build_schema_registry_url(cfg),
         eos_enabled=cfg.kafka.eos.enabled,
         transactional_id=kafka_config.get("transactional.id"),
         eos_init_timeout_sec=cfg.kafka.eos.init_timeout_sec,
@@ -157,6 +159,7 @@ def resolve(cfg) -> RuntimeConfig:
     )
     
     entities = cfg.entities
+    internal_entities = resolve_internal_entities(cfg.entities)
     
     observability = ObservabilityRuntime(
         config=cfg.observability.model_copy(deep=True),
@@ -173,6 +176,7 @@ def resolve(cfg) -> RuntimeConfig:
         pipeline=pipeline,
         chain=chain,
         entities=entities,
+        internal_entities=internal_entities,
         observability=observability,
     )
 

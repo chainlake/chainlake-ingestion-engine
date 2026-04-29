@@ -12,6 +12,7 @@ def test_build_protobuf_topic_schemas_includes_main_and_dlq_topics():
             "trace": "evm.bsc.mainnet.raw_trace",
         },
         dlq="dlq.ingestion",
+        checkpoint="evm.bsc.mainnet.checkpoint_cursor",
     )
 
     schemas = build_protobuf_topic_schemas(topic_maps, ["block", "trace"])
@@ -20,6 +21,25 @@ def test_build_protobuf_topic_schemas_includes_main_and_dlq_topics():
         "evm.bsc.mainnet.raw_block",
         "evm.bsc.mainnet.raw_trace",
         "dlq.ingestion",
+        "evm.bsc.mainnet.checkpoint_cursor",
+    }
+
+
+def test_build_protobuf_topic_schemas_uses_enriched_transaction_topic():
+    topic_maps = SimpleNamespace(
+        main={
+            "transaction": "evm.bsc.mainnet.enriched_transaction",
+        },
+        dlq="dlq.ingestion",
+        checkpoint="evm.bsc.mainnet.checkpoint_cursor",
+    )
+
+    schemas = build_protobuf_topic_schemas(topic_maps, ["transaction"])
+
+    assert set(schemas) == {
+        "evm.bsc.mainnet.enriched_transaction",
+        "dlq.ingestion",
+        "evm.bsc.mainnet.checkpoint_cursor",
     }
 
 
@@ -185,10 +205,10 @@ def test_kafka_writer_send_transaction_commits_business_and_checkpoint():
     async def run():
         await writer.start()
         await writer.send_transaction(
-            [("topic-a", [{"id": "evt-1", "type": "block"}])],
-            "checkpoint-topic",
-            "checkpoint-key",
-            b'{"cursor":1}',
+            [
+                ("topic-a", [{"id": "evt-1", "type": "block"}]),
+                ("checkpoint-topic", [{"id": "checkpoint-key", "cursor": 1}]),
+            ],
         )
         await writer.close()
 
@@ -197,6 +217,60 @@ def test_kafka_writer_send_transaction_commits_business_and_checkpoint():
     assert ("init", 12) in producer.events
     assert producer.events[1] == ("begin",)
     assert ("produce", "topic-a", "evt-1", '{"id":"evt-1","type":"block","ingest_timestamp":1}') in producer.events
-    assert ("produce", "checkpoint-topic", "checkpoint-key", b'{"cursor":1}') in producer.events
+    assert ("produce", "checkpoint-topic", "checkpoint-key", '{"id":"checkpoint-key","cursor":1,"ingest_timestamp":1}') in producer.events
     assert ("commit",) in producer.events
     assert ("abort",) not in producer.events
+
+
+def test_kafka_writer_send_checkpoint_uses_common_message_envelope():
+    class Message:
+        def topic(self):
+            return "checkpoint-topic"
+
+        def partition(self):
+            return 0
+
+        def offset(self):
+            return 1
+
+    class DummyProducer:
+        def __init__(self):
+            self.events = []
+
+        def produce(self, topic, key, value, callback=None):
+            self.events.append(("produce", topic, key, value))
+            if callback:
+                callback(None, Message())
+
+        def poll(self, _timeout):
+            return None
+
+        def flush(self):
+            return None
+
+    producer = DummyProducer()
+    writer = KafkaWriter(
+        producer=producer,
+        id_calculator=SimpleNamespace(calculate_event_id=lambda row: row["id"]),
+        time_calculator=SimpleNamespace(calculate_ingest_timestamp=lambda: 1),
+        logger=None,
+        config=SimpleNamespace(batch_size=10, flush_interval_ms=1, queue_maxsize=10),
+        producer_config={"bootstrap.servers": "localhost:9092"},
+        topic_maps=SimpleNamespace(main={"block": "topic-a"}, dlq="dlq.ingestion"),
+        protobuf_enabled=False,
+    )
+
+    async def run():
+        await writer.start()
+        future = await writer.send_checkpoint(
+            "checkpoint-topic",
+            {"id": "checkpoint-key", "cursor": 1, "kafka_partition_key": "checkpoint-key"},
+            wait_delivery=True,
+        )
+        await writer.close()
+        return await asyncio.wait_for(future, timeout=1)
+
+    assert asyncio.run(run()) is True
+    assert producer.events == [
+        ("produce", "checkpoint-topic", "checkpoint-key", '{"id":"checkpoint-key","cursor":1,"ingest_timestamp":1}')
+    ]

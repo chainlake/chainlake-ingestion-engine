@@ -125,6 +125,9 @@ class KafkaWriter:
 
         return delivery_future
 
+    async def send_checkpoint(self, topic, row, wait_delivery=True):
+        return await self.send(topic, [row], wait_delivery=wait_delivery)
+
     # ----------------------------
     # Worker loop
     # ----------------------------
@@ -259,18 +262,10 @@ class KafkaWriter:
     async def send_transaction(
         self,
         topic_rows,
-        checkpoint_topic=None,
-        checkpoint_key=None,
-        checkpoint_value=None,
     ):
-        self._send_transaction_sync(
-            topic_rows,
-            checkpoint_topic,
-            checkpoint_key,
-            checkpoint_value,
-        )
+        self._send_transaction_sync(topic_rows)
 
-    def _send_transaction_sync(self, topic_rows, checkpoint_topic, checkpoint_key, checkpoint_value):
+    def _send_transaction_sync(self, topic_rows):
         if not self.eos_enabled:
             raise RuntimeError("Kafka EOS transaction mode is not enabled")
 
@@ -286,15 +281,6 @@ class KafkaWriter:
                         callback=self.delivery_report,
                     )
                     self.producer.poll(0)
-
-            if checkpoint_topic is not None:
-                self.producer.produce(
-                    topic=checkpoint_topic,
-                    key=checkpoint_key,
-                    value=checkpoint_value,
-                    callback=self.delivery_report,
-                )
-                self.producer.poll(0)
             self.producer.commit_transaction()
         except Exception:
             self.producer.abort_transaction()
@@ -384,23 +370,16 @@ class KafkaWriter:
         self._worker_task = asyncio.create_task(self._worker())
 
     async def _init_transactions(self):
-        """
-        Initialize the transactional producer without blocking the event loop.
-
-        init_transactions() is a blocking broker round-trip and can take a long
-        time on managed clusters while the transaction coordinator is elected or
-        when ACLs are still propagating.
-        """
         attempts = 3
         backoff_sec = 1.0
         last_exc = None
 
         for attempt in range(1, attempts + 1):
             try:
-                await asyncio.to_thread(
-                    self.producer.init_transactions,
-                    self.eos_init_timeout_sec,
-                )
+                # Startup already runs before the engine begins consuming blocks,
+                # so a synchronous init keeps teardown deterministic in tests and
+                # avoids lingering executor threads.
+                self.producer.init_transactions(self.eos_init_timeout_sec)
                 return
             except Exception as exc:
                 last_exc = exc

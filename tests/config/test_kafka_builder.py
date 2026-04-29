@@ -44,7 +44,23 @@ def test_build_kafka_config_enables_compression(monkeypatch):
 def test_build_schema_registry_url_supports_existing_env_name(monkeypatch):
     monkeypatch.setenv("KAFAK_SCHEMA_REGISTRY", "registry.example.com:8081")
 
-    assert build_schema_registry_url() == "https://registry.example.com:8081"
+    cfg = SimpleNamespace(
+        kafka=SimpleNamespace(
+            protobuf=SimpleNamespace(schema_registry_url="http://localhost:30081")
+        )
+    )
+
+    assert build_schema_registry_url(cfg) == "https://registry.example.com:8081"
+
+
+def test_build_schema_registry_url_falls_back_to_pipeline_config():
+    cfg = SimpleNamespace(
+        kafka=SimpleNamespace(
+            protobuf=SimpleNamespace(schema_registry_url="http://localhost:30081")
+        )
+    )
+
+    assert build_schema_registry_url(cfg) == "http://localhost:30081"
 
 
 def test_build_topic_maps_only_includes_main_and_dlq_topics():
@@ -61,8 +77,25 @@ def test_build_topic_maps_only_includes_main_and_dlq_topics():
     topic_maps = build_topic_maps(cfg)
 
     assert topic_maps.main["block"] == "evm.bsc.mainnet.raw_block"
+    assert topic_maps.main["trace"] == "evm.bsc.mainnet.raw_trace"
     assert topic_maps.dlq == "dlq.ingestion"
     assert topic_maps.checkpoint == "evm.bsc.mainnet.checkpoint_cursor"
+
+
+def test_build_topic_maps_uses_enriched_topic_for_transactions():
+    cfg = SimpleNamespace(
+        kafka=SimpleNamespace(
+            common=SimpleNamespace(
+                topic_template="{type}.{chain}.{network}.{kind}_{entity}"
+            )
+        ),
+        chain=SimpleNamespace(type="evm", name="bsc", network="mainnet"),
+        entities=["transaction"],
+    )
+
+    topic_maps = build_topic_maps(cfg)
+
+    assert topic_maps.main["transaction"] == "evm.bsc.mainnet.enriched_transaction"
 
 
 def test_build_topic_maps_supports_custom_checkpoint_topic():

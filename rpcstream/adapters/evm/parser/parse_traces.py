@@ -1,3 +1,6 @@
+from dataclasses import asdict
+
+from rpcstream.adapters.evm.entities.trace import Trace
 from rpcstream.utils.utils import hex_to_dec
 
 # trace (trace_block)
@@ -19,50 +22,34 @@ def parse_trace_block(traces: list, block_number: int):
         if trace_address:
             parent_trace_id = build_trace_id(tx_hash, trace_address[:-1])
         
-        rows.append({
-            "type": "trace",
-            # identity
-            "block_number": block_number,
-            "transaction_hash": t.get("transactionHash"),
-
-            # trace identity
-            "trace_id": trace_id,
-            "parent_trace_id": parent_trace_id,
-            "trace_index": t.get("transactionPosition"),
-            
-            # addresses
-            "from_address": action.get("from"),
-            "to_address": action.get("to"),
-            
-            # value + data
-            "value": hex_to_dec(action.get("value")),
-            "input": action.get("input"),
-            "output": result.get("output"),
-            
-            # execution
-            "call_type": action.get("callType"),
-            "trace_type": t.get("type"),
-            "status": result.get("status"),
-            "error": t.get("error"),
-            
-            # gas
-            "gas": hex_to_dec(action.get("gas")),
-            "gas_used": hex_to_dec(result.get("gasUsed")),
-            
-            # structure
-            "depth": len(t.get("traceAddress", [])),
-            "subtraces": t.get("subtraces"),
-            
-            # unified fields
-            "reward_type": action.get("rewardType"),
-            "trace_address": trace_address,
-            
-            # origin metadata ⭐
-            "trace_source": "parity",
-            "trace_method": "trace_block",
-            
-            
-        })
+        rows.append(
+            asdict(
+                Trace(
+                    block_number=block_number,
+                    transaction_hash=t.get("transactionHash"),
+                    trace_id=trace_id,
+                    parent_trace_id=parent_trace_id,
+                    trace_index=t.get("transactionPosition"),
+                    from_address=action.get("from"),
+                    to_address=action.get("to"),
+                    value=hex_to_dec(action.get("value")),
+                    input=action.get("input"),
+                    output=result.get("output"),
+                    call_type=action.get("callType"),
+                    trace_type=t.get("type"),
+                    status=result.get("status"),
+                    error=t.get("error"),
+                    gas=hex_to_dec(action.get("gas")),
+                    gas_used=hex_to_dec(result.get("gasUsed")),
+                    depth=len(t.get("traceAddress", [])),
+                    subtraces=t.get("subtraces"),
+                    reward_type=action.get("rewardType"),
+                    trace_address=trace_address,
+                    trace_source="parity",
+                    trace_method="trace_block",
+                )
+            )
+        )
     return rows
 
 
@@ -92,40 +79,34 @@ def flatten_call(call, block_number, tx_hash, depth=0, parent_trace_id=None, tra
     # deterministic trace_id
     trace_id = build_trace_id(tx_hash, trace_address)
 
-    rows.append({
-        "type": "trace",
-        "block_number": block_number,
-        "transaction_hash": tx_hash,
-
-        "trace_id": trace_id,
-        "parent_trace_id": parent_trace_id,
-        "trace_index": None,
-
-        "from_address": call.get("from"),
-        "to_address": call.get("to"),
-        
-        "value": hex_to_dec(call.get("value")),
-        "input": call.get("input"),
-        "output": call.get("output"),
-
-        "call_type": call.get("type"),
-        "trace_type": "call",
-        "status": None,
-        "error": call.get("error"),
-        
-        "gas": hex_to_dec(call.get("gas")),
-        "gas_used": hex_to_dec(call.get("gasUsed")),
-
-        "depth": depth,
-        "subtraces": len(call.get("calls", [])),
-
-        # unified fields
-        "reward_type": None,
-        "trace_address": trace_address.copy(),
-            
-        "trace_source": "geth",
-        "trace_method": "debug_trace",
-    })
+    rows.append(
+        asdict(
+            Trace(
+                block_number=block_number,
+                transaction_hash=tx_hash,
+                trace_id=trace_id,
+                parent_trace_id=parent_trace_id,
+                trace_index=None,
+                from_address=call.get("from"),
+                to_address=call.get("to"),
+                value=hex_to_dec(call.get("value")),
+                input=call.get("input"),
+                output=call.get("output"),
+                call_type=call.get("type"),
+                trace_type="call",
+                status=None,
+                error=call.get("error"),
+                gas=hex_to_dec(call.get("gas")),
+                gas_used=hex_to_dec(call.get("gasUsed")),
+                depth=depth,
+                subtraces=len(call.get("calls", [])),
+                reward_type=None,
+                trace_address=trace_address.copy(),
+                trace_source="geth",
+                trace_method="debug_trace",
+            )
+        )
+    )
 
     for i, subcall in enumerate(call.get("calls", []) or []):
         rows.extend(

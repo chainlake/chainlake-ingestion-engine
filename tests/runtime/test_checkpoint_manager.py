@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from rpcstream.state.checkpoint import (
     CheckpointIdentity,
     CheckpointManager,
-    KafkaCheckpointStore,
+    KafkaCheckpointReader,
     build_checkpoint_identity,
 )
 
@@ -13,15 +13,26 @@ class MemoryStore:
     def __init__(self):
         self.writes = []
 
-    async def write(self, cursor, status="running", error=None):
-        self.writes.append((cursor, status, error))
+    async def send_checkpoint(self, topic, row, wait_delivery=True):
+        self.writes.append((topic, row, wait_delivery))
 
 
 def test_checkpoint_manager_advances_only_contiguous_completed_cursors():
     async def run():
-        store = MemoryStore()
+        sink = MemoryStore()
+        identity = CheckpointIdentity(
+            pipeline="pipe",
+            chain_uid="evm:56",
+            chain_type="evm",
+            network="mainnet",
+            mode="realtime",
+            primary_unit="block",
+            entities=("block",),
+        )
         manager = CheckpointManager(
-            store=store,
+            sink=sink,
+            topic="checkpoint-topic",
+            identity=identity,
             initial_cursor=99,
             flush_interval_ms=10000,
             commit_batch_size=100,
@@ -38,15 +49,36 @@ def test_checkpoint_manager_advances_only_contiguous_completed_cursors():
         assert manager.cursor == 102
 
         await manager.stop(status="eos")
-        return store.writes
+        return sink.writes
 
-    assert asyncio.run(run()) == [(102, "eos", None)]
+    writes = asyncio.run(run())
+    assert len(writes) == 1
+    topic, row, wait_delivery = writes[0]
+    assert topic == "checkpoint-topic"
+    assert wait_delivery is True
+    assert row["cursor"] == 102
+    assert row["status"] == "eos"
+    assert row["id"].startswith("pipeline=pipe|")
 
 
 def test_checkpoint_manager_waits_for_first_emitted_cursor_before_advancing():
     async def run():
-        store = MemoryStore()
-        manager = CheckpointManager(store=store, flush_interval_ms=10000)
+        sink = MemoryStore()
+        identity = CheckpointIdentity(
+            pipeline="pipe",
+            chain_uid="evm:56",
+            chain_type="evm",
+            network="mainnet",
+            mode="realtime",
+            primary_unit="block",
+            entities=("block",),
+        )
+        manager = CheckpointManager(
+            sink=sink,
+            topic="checkpoint-topic",
+            identity=identity,
+            flush_interval_ms=10000,
+        )
 
         await manager.mark_completed(101)
         assert manager.cursor is None
@@ -75,7 +107,7 @@ def test_build_checkpoint_identity_uses_multichain_key_fields():
     assert "entities=checkpoint,transaction" in identity.key
 
 
-def test_kafka_checkpoint_store_consumer_config_enables_partition_eof():
+def test_kafka_checkpoint_reader_consumer_config_enables_partition_eof():
     identity = CheckpointIdentity(
         pipeline="pipe",
         chain_uid="evm:56",
@@ -85,7 +117,7 @@ def test_kafka_checkpoint_store_consumer_config_enables_partition_eof():
         primary_unit="block",
         entities=("block",),
     )
-    store = KafkaCheckpointStore(
+    store = KafkaCheckpointReader(
         topic="evm.bsc.mainnet.checkpoint_cursor",
         producer_config={"bootstrap.servers": "localhost:9092", "linger.ms": 50},
         identity=identity,

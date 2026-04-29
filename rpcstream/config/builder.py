@@ -2,6 +2,7 @@
 import os
 import socket
 
+from rpcstream.adapters.evm.dag import resolve_sink_entities
 from rpcstream.runtime.topic import (
     TopicMaps,
     build_checkpoint_topic,
@@ -101,10 +102,11 @@ def build_transactional_id(cfg: PipelineConfig) -> str:
     )
 
 
-def build_schema_registry_url() -> str | None:
+def build_schema_registry_url(cfg: PipelineConfig) -> str | None:
     raw = (
         os.getenv("KAFAK_SCHEMA_REGISTRY")
         or os.getenv("KAFKA_SCHEMA_REGISTRY")
+        or cfg.kafka.protobuf.schema_registry_url
     )
     if not raw:
         return None
@@ -120,7 +122,7 @@ def build_topic_maps(cfg) -> TopicMaps:
 
     topics = {}
 
-    for entity in cfg.entities:
+    for entity in resolve_sink_entities(cfg.entities):
         normalized = normalize_entity(entity)
         topic_set = build_topics(cfg, normalized)
 

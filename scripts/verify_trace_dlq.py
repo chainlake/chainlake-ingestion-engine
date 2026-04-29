@@ -27,6 +27,7 @@ from rpcstream.sinks.kafka.producer import KafkaWriter  # noqa: E402
 from rpcstream.utils.logger import JsonLogger  # noqa: E402
 from rpcstream.adapters.evm.identity.event_id_calculator import EventIdCalculator  # noqa: E402
 from rpcstream.adapters.evm.identity.event_time_calculator import EventTimeCalculator  # noqa: E402
+from rpcstream.adapters.evm.enrich import EvmEnricher  # noqa: E402
 
 
 class DummyFetcher:
@@ -131,6 +132,7 @@ async def send_one_trace_dlq(runtime, logger, marker: str, block_number: int) ->
     engine = IngestionEngine(
         fetcher=DummyFetcher(value=[], meta=fetch_meta),
         processors={"trace": FailingTraceProcessor()},
+        enricher=EvmEnricher(),
         sink=writer,
         topics=runtime.topic_map.main,
         dlq_topic=runtime.topic_map.dlq,
@@ -141,7 +143,7 @@ async def send_one_trace_dlq(runtime, logger, marker: str, block_number: int) ->
         logger=logger,
         observability=ObservabilityContext.disabled(),
         checkpoint_manager=None,
-        checkpoint_store=None,
+        checkpoint_reader=None,
         eos_enabled=runtime.kafka.eos_enabled,
     )
 

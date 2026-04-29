@@ -72,3 +72,12 @@ def test_parser_defaults_to_local_replay_mode_without_subcommand():
     assert args.offset == "earliest"
     assert args.entity == "trace"
     assert args.status == "pending"
+
+
+def test_parser_help_includes_examples_and_subcommands():
+    help_text = build_parser().format_help()
+
+    assert "Examples:" in help_text
+    assert "render" in help_text
+    assert "run" in help_text
+    assert "python rpcstream/adapters/evm/jobs/dlq_replay_job.py" in help_text

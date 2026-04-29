@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from __future__ import annotations
 
 import argparse
@@ -9,6 +10,11 @@ from dataclasses import dataclass
 from typing import Any
 
 import yaml
+
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "../../../.."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 from rpcstream.app_runtime import build_runtime_stack
 from rpcstream.config.loader import load_pipeline_config
@@ -27,7 +33,6 @@ DEFAULT_KAFKA_CREDENTIALS_SECRET = "kafka-credentials"
 DEFAULT_KAFKA_CA_SECRET = "kafka-ca-secret"
 DEFAULT_KAFKA_CA_PATH = "/etc/ssl/certs/ca.pem"
 DEFAULT_RESTART_POLICY = "Never"
-REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
 LOCAL_DEFAULT_CONFIG_PATH = os.path.join(REPO_ROOT, "rpcstream", "pipeline.yaml")
 
 
@@ -71,7 +76,22 @@ def default_local_group_id() -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run a DLQ replay locally or render a generic Kubernetes Job manifest.",
+        description=(
+            "Replay EVM DLQ records back through the ingestion engine, either locally "
+            "or inside a Kubernetes Job."
+        ),
+        epilog=(
+            "Examples:\n"
+            f"  python {os.path.relpath(__file__, REPO_ROOT)} "
+            "--config rpcstream/pipeline.yaml --entity trace --status pending "
+            "--stage processor --max-records 1\n"
+            "  python -m rpcstream.adapters.evm.jobs.dlq_replay_job render "
+            "--config rpcstream/pipeline.yaml --entity trace --status pending "
+            "--output k8s/dlq/dlq-replay-job.yaml\n"
+            "  python -m rpcstream.adapters.evm.jobs.dlq_replay_job run "
+            "--group-id rpcstream-dlq-replay-manual --offset earliest"
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -80,6 +100,10 @@ def build_parser() -> argparse.ArgumentParser:
     render_parser = subparsers.add_parser(
         "render",
         help="Render a Kubernetes Job manifest for DLQ replay.",
+        description=(
+            "Render a Kubernetes Job manifest. The generated Job runs the same replay "
+            "worker using the 'run' subcommand inside the container."
+        ),
     )
     add_shared_args(render_parser, include_config=True, local_mode=False)
     render_parser.add_argument(
@@ -91,6 +115,10 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser(
         "run",
         help="Run the replay worker inside a Kubernetes Job.",
+        description=(
+            "Run the replay worker directly. This is the entrypoint used by the "
+            "rendered Kubernetes Job manifest."
+        ),
     )
     add_shared_args(run_parser, include_config=False, local_mode=False)
     return parser
@@ -104,20 +132,35 @@ def add_shared_args(parser: argparse.ArgumentParser, *, include_config: bool, lo
             help="Path to pipeline.yaml used for replay runtime and manifest metadata.",
         )
 
-    parser.add_argument("--job-name", default=os.getenv("DLQ_REPLAY_JOB_NAME", DEFAULT_JOB_NAME))
-    parser.add_argument("--namespace", default=os.getenv("K8S_NAMESPACE", DEFAULT_NAMESPACE))
-    parser.add_argument("--image", default=os.getenv("DLQ_REPLAY_IMAGE", DEFAULT_IMAGE))
+    parser.add_argument(
+        "--job-name",
+        default=os.getenv("DLQ_REPLAY_JOB_NAME", DEFAULT_JOB_NAME),
+        help="Kubernetes Job name used by the rendered manifest.",
+    )
+    parser.add_argument(
+        "--namespace",
+        default=os.getenv("K8S_NAMESPACE", DEFAULT_NAMESPACE),
+        help="Kubernetes namespace used by the rendered manifest.",
+    )
+    parser.add_argument(
+        "--image",
+        default=os.getenv("DLQ_REPLAY_IMAGE", DEFAULT_IMAGE),
+        help="Container image used by the rendered manifest.",
+    )
     parser.add_argument(
         "--image-pull-policy",
         default=os.getenv("DLQ_REPLAY_IMAGE_PULL_POLICY", DEFAULT_IMAGE_PULL_POLICY),
+        help="Container image pull policy used by the rendered manifest.",
     )
     parser.add_argument(
         "--config-map-name",
         default=os.getenv("DLQ_REPLAY_CONFIG_MAP_NAME", DEFAULT_CONFIG_MAP_NAME),
+        help="ConfigMap name that provides pipeline.yaml to the replay Job.",
     )
     parser.add_argument(
         "--config-mount-path",
         default=os.getenv("DLQ_REPLAY_CONFIG_MOUNT_PATH", "/config"),
+        help="Mount path for the ConfigMap that contains pipeline.yaml.",
     )
     parser.add_argument(
         "--kafka-credentials-secret",
@@ -125,18 +168,22 @@ def add_shared_args(parser: argparse.ArgumentParser, *, include_config: bool, lo
             "DLQ_REPLAY_KAFKA_CREDENTIALS_SECRET",
             DEFAULT_KAFKA_CREDENTIALS_SECRET,
         ),
+        help="Secret containing Kafka bootstrap servers and SASL credentials.",
     )
     parser.add_argument(
         "--kafka-ca-secret",
         default=os.getenv("DLQ_REPLAY_KAFKA_CA_SECRET", DEFAULT_KAFKA_CA_SECRET),
+        help="Secret containing the Kafka CA certificate.",
     )
     parser.add_argument(
         "--kafka-ca-mount-path",
         default=os.getenv("DLQ_REPLAY_KAFKA_CA_MOUNT_PATH", "/etc/ssl/certs"),
+        help="Mount path for the Kafka CA secret.",
     )
     parser.add_argument(
         "--kafka-ca-path",
         default=os.getenv("KAFKA_CA_PATH", DEFAULT_KAFKA_CA_PATH),
+        help="Filesystem path of the Kafka CA certificate inside the container.",
     )
     parser.add_argument(
         "--group-id",
@@ -144,41 +191,66 @@ def add_shared_args(parser: argparse.ArgumentParser, *, include_config: bool, lo
             "DLQ_REPLAY_GROUP_ID",
             f"{DEFAULT_REPLAY_GROUP}-manual",
         ),
+        help="Consumer group id used when reading unresolved DLQ records.",
     )
     parser.add_argument(
         "--offset",
         choices=("earliest", "latest"),
         default=os.getenv("DLQ_REPLAY_OFFSET", "earliest"),
+        help="Start position used when the replay consumer group has no committed offsets.",
     )
-    parser.add_argument("--entity", default=os.getenv("DLQ_REPLAY_ENTITY"))
-    parser.add_argument("--status", default=os.getenv("DLQ_REPLAY_STATUS", "failed"))
-    parser.add_argument("--stage", default=os.getenv("DLQ_REPLAY_STAGE"))
-    parser.add_argument("--max-records", type=int, default=_env_optional_int("DLQ_REPLAY_MAX_RECORDS"))
+    parser.add_argument(
+        "--entity",
+        default=os.getenv("DLQ_REPLAY_ENTITY"),
+        help="Optional entity filter, for example block, transaction, log, or trace.",
+    )
+    parser.add_argument(
+        "--status",
+        default=os.getenv("DLQ_REPLAY_STATUS", "failed"),
+        help="DLQ status filter to replay, for example failed or pending.",
+    )
+    parser.add_argument(
+        "--stage",
+        default=os.getenv("DLQ_REPLAY_STAGE"),
+        help="Optional DLQ stage filter, for example fetcher, processor, or sink.",
+    )
+    parser.add_argument(
+        "--max-records",
+        type=int,
+        default=_env_optional_int("DLQ_REPLAY_MAX_RECORDS"),
+        help="Maximum number of DLQ records to replay before exiting.",
+    )
     parser.add_argument(
         "--backoff-limit",
         type=int,
         default=int(os.getenv("DLQ_REPLAY_BACKOFF_LIMIT", "0")),
+        help="Kubernetes Job backoffLimit used by the rendered manifest.",
     )
     parser.add_argument(
         "--termination-grace-period-seconds",
         type=int,
         default=int(os.getenv("DLQ_REPLAY_TERMINATION_GRACE_PERIOD_SECONDS", "5")),
+        help="Kubernetes Job termination grace period in seconds.",
     )
     parser.add_argument(
         "--request-cpu",
         default=os.getenv("DLQ_REPLAY_REQUEST_CPU", "200m"),
+        help="CPU request used by the rendered manifest.",
     )
     parser.add_argument(
         "--request-memory",
         default=os.getenv("DLQ_REPLAY_REQUEST_MEMORY", "128Mi"),
+        help="Memory request used by the rendered manifest.",
     )
     parser.add_argument(
         "--limit-cpu",
         default=os.getenv("DLQ_REPLAY_LIMIT_CPU", "500m"),
+        help="CPU limit used by the rendered manifest.",
     )
     parser.add_argument(
         "--limit-memory",
         default=os.getenv("DLQ_REPLAY_LIMIT_MEMORY", "512Mi"),
+        help="Memory limit used by the rendered manifest.",
     )
 
 

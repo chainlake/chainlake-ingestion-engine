@@ -1,6 +1,7 @@
 import asyncio
 from types import SimpleNamespace
 
+from rpcstream.adapters.evm.enrich import EvmEnricher
 from rpcstream.ingestion.engine import IngestionEngine
 
 
@@ -46,16 +47,15 @@ class RecordingSink:
         self.sent.append((topic, rows, wait_delivery))
         return None
 
-    async def send_transaction(self, topic_rows, checkpoint_topic, checkpoint_key, checkpoint_value):
-        self.sent_transactions.append(
-            (topic_rows, checkpoint_topic, checkpoint_key, checkpoint_value)
-        )
+    async def send_transaction(self, topic_rows):
+        self.sent_transactions.append(topic_rows)
 
 
 def build_engine(*, sink, eos_enabled=False):
     return IngestionEngine(
         fetcher=DummyFetcher(value=[]),
         processors={"trace": FailingTraceProcessor()},
+        enricher=EvmEnricher(),
         sink=sink,
         topics={"trace": "evm.bsc.mainnet.raw_trace"},
         dlq_topic="dlq.ingestion",
@@ -65,7 +65,7 @@ def build_engine(*, sink, eos_enabled=False):
         concurrency=1,
         logger=None,
         checkpoint_manager=None,
-        checkpoint_store=None,
+        checkpoint_reader=None,
         eos_enabled=eos_enabled,
     )
 
@@ -74,6 +74,7 @@ def build_success_engine(*, sink, eos_enabled=False):
     return IngestionEngine(
         fetcher=DummyFetcher(value=[]),
         processors={"trace": SuccessfulTraceProcessor()},
+        enricher=EvmEnricher(),
         sink=sink,
         topics={"trace": "evm.bsc.mainnet.raw_trace"},
         dlq_topic="dlq.ingestion",
@@ -83,7 +84,7 @@ def build_success_engine(*, sink, eos_enabled=False):
         concurrency=1,
         logger=None,
         checkpoint_manager=None,
-        checkpoint_store=None,
+        checkpoint_reader=None,
         eos_enabled=eos_enabled,
     )
 
@@ -120,10 +121,7 @@ def test_engine_sends_trace_dlq_via_transaction_when_eos_enabled():
     assert delivery_futures == []
     assert sink.sent == []
     assert len(sink.sent_transactions) == 1
-    topic_rows, checkpoint_topic, checkpoint_key, checkpoint_value = sink.sent_transactions[0]
-    assert checkpoint_topic is None
-    assert checkpoint_key is None
-    assert checkpoint_value is None
+    topic_rows = sink.sent_transactions[0]
     assert len(topic_rows) == 1
     topic, rows = topic_rows[0]
     assert topic == "dlq.ingestion"
@@ -141,10 +139,7 @@ def test_engine_sends_business_rows_via_transaction_when_eos_enabled_without_che
     assert delivery_futures == []
     assert sink.sent == []
     assert len(sink.sent_transactions) == 1
-    topic_rows, checkpoint_topic, checkpoint_key, checkpoint_value = sink.sent_transactions[0]
-    assert checkpoint_topic is None
-    assert checkpoint_key is None
-    assert checkpoint_value is None
+    topic_rows = sink.sent_transactions[0]
     assert topic_rows == [
         (
             "evm.bsc.mainnet.raw_trace",
@@ -178,10 +173,7 @@ def test_engine_marks_dlq_resolved_via_transaction_when_eos_enabled():
 
     assert sink.sent == []
     assert len(sink.sent_transactions) == 1
-    topic_rows, checkpoint_topic, checkpoint_key, checkpoint_value = sink.sent_transactions[0]
-    assert checkpoint_topic is None
-    assert checkpoint_key is None
-    assert checkpoint_value is None
+    topic_rows = sink.sent_transactions[0]
     assert len(topic_rows) == 1
     assert topic_rows[0][0] == "dlq.ingestion"
     assert topic_rows[0][1][0]["status"] == "resolved"

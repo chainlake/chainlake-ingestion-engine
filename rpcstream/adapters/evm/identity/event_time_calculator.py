@@ -1,5 +1,5 @@
-# import logging
 from datetime import datetime
+import time
 
 
 class EventTimeCalculator:
@@ -28,13 +28,8 @@ class EventTimeCalculator:
         """
         System ingestion time
         """
-        # Get current UTC time and convert to Unix timestamp in seconds
-        timestamp_seconds = datetime.utcnow().timestamp()
-        
-        # Convert to milliseconds
-        timestamp_milliseconds = int(timestamp_seconds * 1000)
-        
-        return timestamp_milliseconds
+        # Use epoch seconds directly to avoid naive-datetime timezone skew.
+        return int(time.time() * 1000)
 
 
     def _to_rfc3339(self, ts):

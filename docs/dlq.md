@@ -149,7 +149,7 @@ UV_CACHE_DIR=/tmp/uvcache uv run python scripts/read_dlq.py \
 Run one local replay:
 
 ```bash
-UV_CACHE_DIR=/tmp/uvcache uv run python rpcstream/adapters/evm/jobs/dlq_replay.job.py \
+UV_CACHE_DIR=/tmp/uvcache uv run python rpcstream/adapters/evm/jobs/dlq_replay_job.py \
   --config rpcstream/pipeline.yaml \
   --entity trace \
   --status pending \

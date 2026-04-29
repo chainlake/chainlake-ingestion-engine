@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from rpcstream.adapters.evm.schema import EVM_ENTITY_SCHEMAS, EntitySchema
 from rpcstream.sinks.kafka.admin import KafkaTopicManager
-from rpcstream.sinks.kafka.protobuf import DLQ_SCHEMA, ProtobufSerializerRegistry
+from rpcstream.sinks.kafka.protobuf import CHECKPOINT_SCHEMA, DLQ_SCHEMA, ProtobufSerializerRegistry
 
 
 def build_protobuf_topic_schemas(topic_maps, entities: list[str]) -> dict[str, EntitySchema]:
@@ -12,6 +12,8 @@ def build_protobuf_topic_schemas(topic_maps, entities: list[str]) -> dict[str, E
         if entity in EVM_ENTITY_SCHEMAS
     }
     topic_schemas[topic_maps.dlq] = DLQ_SCHEMA
+    if getattr(topic_maps, "checkpoint", None):
+        topic_schemas[topic_maps.checkpoint] = CHECKPOINT_SCHEMA
     return topic_schemas
 
 

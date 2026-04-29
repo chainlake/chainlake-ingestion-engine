@@ -11,14 +11,13 @@ chain:
   network: "mainnet"
 
 entities:
-  #- "block"
-  #- "transaction"
-  #- "receipt"
+  - "block"
+  - "transaction"
   #- "log"
-  - "trace"
+  #- "trace"
 
 erpc:
-  project_id: backup
+  project_id: main
   base_url: http://localhost:30040 # endpoint: "http://erpc-service.erpc.svc:4000/main/evm/56"
   timeout_sec: 10
   max_retries: 1
@@ -26,7 +25,7 @@ erpc:
     min_inflight: 1
     max_inflight: 10
     initial_inflight: 5
-    latency_target_ms: 1000
+    latency_target_ms: 100
 
 tracker:
   # ratio of the chain block interval used to poll head updates
@@ -91,6 +90,7 @@ kafka:
     queue_maxsize: 100       # backpressure control
   protobuf:
     enabled: true
+    schema_registry_url: "http://localhost:30081"
   eos:
     enabled: true
     transactional_id_template: "{pipeline}.{chain_uid}.{mode}.{entities}"

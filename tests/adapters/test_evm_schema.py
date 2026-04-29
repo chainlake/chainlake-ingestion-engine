@@ -15,7 +15,6 @@ def test_evm_entity_schemas_cover_all_entities():
     assert set(EVM_ENTITY_SCHEMAS) == {
         "block",
         "transaction",
-        "receipt",
         "log",
         "trace",
     }

@@ -6,6 +6,7 @@ TOPIC_TIMESTAMP_CONFIG = "message.timestamp.type"
 TOPIC_TIMESTAMP_VALUE = "LogAppendTime"
 TOPIC_CLEANUP_POLICY_CONFIG = "cleanup.policy"
 TOPIC_COMPACT_POLICY_VALUE = "compact"
+TOPIC_COMPACT_DELETE_POLICY_VALUE = "compact,delete"
 
 
 class KafkaTopicManager:
@@ -24,7 +25,7 @@ class KafkaTopicManager:
             topics,
             config={
                 TOPIC_TIMESTAMP_CONFIG: TOPIC_TIMESTAMP_VALUE,
-                TOPIC_CLEANUP_POLICY_CONFIG: TOPIC_COMPACT_POLICY_VALUE,
+                TOPIC_CLEANUP_POLICY_CONFIG: TOPIC_COMPACT_DELETE_POLICY_VALUE,
             },
         )
         self._ensure_compaction(topics)
@@ -86,14 +87,14 @@ class KafkaTopicManager:
         for resource, future in described.items():
             config = future.result()
             current_value = self._config_entry_value(config.get(TOPIC_CLEANUP_POLICY_CONFIG))
-            if current_value == TOPIC_COMPACT_POLICY_VALUE:
+            if current_value == TOPIC_COMPACT_DELETE_POLICY_VALUE:
                 continue
 
             update = ConfigResource(RESOURCE_TOPIC, resource.name)
             update.add_incremental_config(
                 ConfigEntry(
                     TOPIC_CLEANUP_POLICY_CONFIG,
-                    TOPIC_COMPACT_POLICY_VALUE,
+                    TOPIC_COMPACT_DELETE_POLICY_VALUE,
                     incremental_operation=AlterConfigOpType.SET,
                 )
             )
@@ -110,7 +111,7 @@ class KafkaTopicManager:
                     "kafka.topic_compaction_updated",
                     component="sink",
                     topic=resource.name,
-                    cleanup_policy=TOPIC_COMPACT_POLICY_VALUE,
+                    cleanup_policy=TOPIC_COMPACT_DELETE_POLICY_VALUE,
                 )
 
     def _ensure_log_append_time(self, admin, topics: list[str]) -> None:

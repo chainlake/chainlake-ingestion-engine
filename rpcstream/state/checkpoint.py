@@ -2,10 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 import time
+import warnings
 from dataclasses import dataclass
 from typing import Any
+
+from confluent_kafka.serialization import MessageField, SerializationContext
+
+from rpcstream.sinks.kafka.protobuf import (
+    CHECKPOINT_SCHEMA,
+    ProtobufSerializerRegistry,
+    build_message_class,
+)
 
 
 @dataclass(frozen=True)
@@ -53,6 +61,26 @@ class CheckpointRecord:
         return value
 
 
+def build_checkpoint_row(
+    identity: "CheckpointIdentity",
+    cursor: int,
+    status: str = "running",
+    error: str | None = None,
+    updated_at_ms: int | None = None,
+) -> dict[str, Any]:
+    record = CheckpointRecord(
+        cursor=cursor,
+        status=status,
+        updated_at_ms=updated_at_ms or int(time.time() * 1000),
+        identity=identity,
+        error=error,
+    )
+    payload = record.to_dict()
+    payload["id"] = identity.key
+    payload["kafka_partition_key"] = identity.key
+    return payload
+
+
 def build_checkpoint_identity(runtime) -> CheckpointIdentity:
     primary_unit = "block"
     if runtime.chain.type == "sui":
@@ -69,20 +97,35 @@ def build_checkpoint_identity(runtime) -> CheckpointIdentity:
     )
 
 
-class KafkaCheckpointStore:
+class KafkaCheckpointReader:
     def __init__(
         self,
         *,
         topic: str,
         producer_config: dict,
         identity: CheckpointIdentity,
+        schema_registry_url: str | None = None,
         logger=None,
     ):
         self.topic = topic
         self.producer_config = producer_config
         self.identity = identity
+        self.schema_registry_url = schema_registry_url
         self.logger = logger
         self._producer = None
+        self._serializer_registry = None
+        self._deserializer = None
+
+        if self.schema_registry_url:
+            self._serializer_registry = ProtobufSerializerRegistry(
+                schema_registry_url=self.schema_registry_url,
+                producer_config=self.producer_config,
+                topic_schemas={self.topic: CHECKPOINT_SCHEMA},
+                auto_register_schemas=False,
+                logger=logger,
+            )
+            self._serializer_registry.prepare()
+            self._deserializer = self._build_deserializer()
 
     def load(self) -> CheckpointRecord | None:
         from confluent_kafka import Consumer, KafkaError, TopicPartition
@@ -134,7 +177,7 @@ class KafkaCheckpointStore:
                 if message.key().decode("utf-8") != self.identity.key:
                     continue
 
-                value = json.loads(message.value().decode("utf-8"))
+                value = self._decode_record(message.value())
                 latest_record = CheckpointRecord(
                     cursor=int(value["cursor"]),
                     status=value.get("status", "running"),
@@ -156,43 +199,46 @@ class KafkaCheckpointStore:
             )
         return latest_record
 
-    async def write(self, cursor: int, status: str = "running", error: str | None = None) -> None:
-        await asyncio.to_thread(self._write_sync, cursor, status, error)
+    def _decode_record(self, payload: bytes) -> dict[str, Any]:
+        if self._deserializer is None:
+            import json
+            return json.loads(payload.decode("utf-8"))
 
-    def build_record(self, cursor: int, status: str = "running", error: str | None = None) -> tuple[str, bytes]:
-        record = CheckpointRecord(
-            cursor=cursor,
-            status=status,
-            updated_at_ms=int(time.time() * 1000),
-            identity=self.identity,
-            error=error,
+        message = self._deserializer(
+            payload,
+            SerializationContext(self.topic, MessageField.VALUE),
         )
-        return (
-            self.identity.key,
-            json.dumps(record.to_dict(), separators=(",", ":")).encode("utf-8"),
-        )
+        return checkpoint_message_to_record(message)
 
-    def _write_sync(self, cursor: int, status: str, error: str | None) -> None:
-        from confluent_kafka import Producer
+    def _build_deserializer(self):
+        with warnings.catch_warnings():
+            try:
+                from authlib.deprecate import AuthlibDeprecationWarning
+            except Exception:
+                AuthlibDeprecationWarning = DeprecationWarning
 
-        if self._producer is None:
-            self._producer = Producer(self.producer_config)
-        key, value = self.build_record(cursor, status=status, error=error)
-        self._producer.produce(
-            topic=self.topic,
-            key=key,
-            value=value,
-        )
-        self._producer.flush()
-        if self.logger:
-            self.logger.info(
-                "checkpoint.flushed",
-                component="checkpoint",
-                topic=self.topic,
-                key=self.identity.key,
-                cursor=cursor,
-                status=status,
+            warnings.filterwarnings(
+                "ignore",
+                category=AuthlibDeprecationWarning,
+                module=r"authlib\._joserfc_helpers",
             )
+
+            from confluent_kafka.schema_registry import SchemaRegistryClient
+            from confluent_kafka.schema_registry.protobuf import ProtobufDeserializer
+
+        client = SchemaRegistryClient(self._schema_registry_conf())
+        return ProtobufDeserializer(
+            build_message_class(CHECKPOINT_SCHEMA),
+            schema_registry_client=client,
+        )
+
+    def _schema_registry_conf(self) -> dict:
+        username = self.producer_config.get("sasl.username")
+        password = self.producer_config.get("sasl.password")
+        conf = {"url": self.schema_registry_url}
+        if username and password:
+            conf["basic.auth.user.info"] = f"{username}:{password}"
+        return conf
 
     def _consumer_config(self) -> dict:
         allowed_prefixes = (
@@ -222,13 +268,17 @@ class CheckpointManager:
     def __init__(
         self,
         *,
-        store,
+        sink,
+        topic: str,
+        identity: CheckpointIdentity,
         initial_cursor: int | None = None,
         flush_interval_ms: int = 100,
         commit_batch_size: int = 100,
         logger=None,
     ):
-        self.store = store
+        self.sink = sink
+        self.topic = topic
+        self.identity = identity
         self.cursor = initial_cursor
         self.flush_interval = flush_interval_ms / 1000
         self.commit_batch_size = commit_batch_size
@@ -303,7 +353,11 @@ class CheckpointManager:
             cursor = self.cursor
             self._dirty = False
 
-        await self.store.write(cursor, status=status)
+        await self.sink.send_checkpoint(
+            self.topic,
+            build_checkpoint_row(self.identity, cursor, status=status),
+            wait_delivery=True,
+        )
 
     async def _flush_loop(self) -> None:
         while self._running:
@@ -313,3 +367,22 @@ class CheckpointManager:
                 pass
             self._flush_event.clear()
             await self.flush()
+
+
+def checkpoint_message_to_record(message) -> dict[str, Any]:
+    record = {}
+    for field in CHECKPOINT_SCHEMA.fields:
+        value = getattr(message, field.name)
+        if field.repeated:
+            record[field.name] = list(value)
+            continue
+        if field.scalar_type == "string":
+            record[field.name] = value or ""
+        elif field.scalar_type == "int64":
+            record[field.name] = int(value)
+        else:
+            record[field.name] = value
+
+    if record.get("error") == "":
+        record["error"] = None
+    return record

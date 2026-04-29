@@ -38,6 +38,7 @@ class KafkaStreaming(BaseModel):
 
 class KafkaProtobuf(BaseModel):
     enabled: bool = True
+    schema_registry_url: str = "http://localhost:30081"
 
 
 class KafkaEos(BaseModel):

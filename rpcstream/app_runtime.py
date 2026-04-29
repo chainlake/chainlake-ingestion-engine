@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from confluent_kafka import Producer
 
+from rpcstream.adapters.evm.enrich import EvmEnricher
 from rpcstream.adapters.evm.identity.event_id_calculator import EventIdCalculator
 from rpcstream.adapters.evm.identity.event_time_calculator import EventTimeCalculator
 from rpcstream.adapters.evm.processor import PROCESSOR_REGISTRY
@@ -17,7 +18,7 @@ from rpcstream.runtime.observability.provider import build_observability
 from rpcstream.scheduler.adaptive import AdaptiveRpcScheduler
 from rpcstream.sinks.kafka.bootstrap import build_protobuf_topic_schemas
 from rpcstream.sinks.kafka.producer import KafkaWriter
-from rpcstream.state.checkpoint import CheckpointManager, KafkaCheckpointStore, build_checkpoint_identity
+from rpcstream.state.checkpoint import CheckpointManager, KafkaCheckpointReader, build_checkpoint_identity
 from rpcstream.utils.logger import JsonLogger
 
 
@@ -83,35 +84,35 @@ def build_runtime_stack(
         logger=logger,
         observability=observability,
     )
-    fetcher = EvmRpcFetcher(scheduler, runtime.entities, logger, tracker)
+    internal_entities = getattr(runtime, "internal_entities", runtime.entities)
+    fetcher = EvmRpcFetcher(scheduler, internal_entities, logger, tracker)
     checkpoint_manager = None
-    checkpoint_store = None
+    checkpoint_reader = None
+    checkpoint_identity = None
     resume_cursor = None
     eos_active = runtime.kafka.eos_enabled
     producer_config = dict(runtime.kafka.config)
     if with_checkpoint and eos_active and not runtime.checkpoint.enabled:
         raise ValueError("kafka.eos.enabled requires pipeline.checkpoint.enabled=true")
     if with_checkpoint and runtime.checkpoint.enabled:
-        checkpoint_store = KafkaCheckpointStore(
+        checkpoint_identity = build_checkpoint_identity(runtime)
+        checkpoint_reader = KafkaCheckpointReader(
             topic=runtime.checkpoint.topic,
             producer_config=runtime.kafka.config,
-            identity=build_checkpoint_identity(runtime),
+            identity=checkpoint_identity,
+            schema_registry_url=(
+                runtime.kafka.schema_registry_url
+                if runtime.kafka.protobuf_enabled
+                else None
+            ),
             logger=logger,
         )
-        checkpoint_record = checkpoint_store.load()
+        checkpoint_record = checkpoint_reader.load()
         if checkpoint_record is not None:
             resume_cursor = checkpoint_record.cursor
-        if not eos_active:
-            checkpoint_manager = CheckpointManager(
-                store=checkpoint_store,
-                initial_cursor=resume_cursor,
-                flush_interval_ms=runtime.checkpoint.flush_interval_ms,
-                commit_batch_size=runtime.checkpoint.commit_batch_size,
-                logger=logger,
-            )
     processors = {
         entity: PROCESSOR_REGISTRY[entity]
-        for entity in runtime.entities
+        for entity in internal_entities
     }
     producer = Producer(producer_config)
     kafka_writer = KafkaWriter(
@@ -129,9 +130,20 @@ def build_runtime_stack(
         eos_enabled=eos_active,
         eos_init_timeout_sec=runtime.kafka.eos_init_timeout_sec,
     )
+    if with_checkpoint and runtime.checkpoint.enabled and not eos_active:
+        checkpoint_manager = CheckpointManager(
+            sink=kafka_writer,
+            topic=runtime.checkpoint.topic,
+            identity=checkpoint_identity,
+            initial_cursor=resume_cursor,
+            flush_interval_ms=runtime.checkpoint.flush_interval_ms,
+            commit_batch_size=runtime.checkpoint.commit_batch_size,
+            logger=logger,
+        )
     engine = IngestionEngine(
         fetcher=fetcher,
         processors=processors,
+        enricher=EvmEnricher(),
         sink=kafka_writer,
         topics=runtime.topic_map.main,
         dlq_topic=runtime.topic_map.dlq,
@@ -142,7 +154,7 @@ def build_runtime_stack(
         logger=logger,
         observability=observability,
         checkpoint_manager=checkpoint_manager,
-        checkpoint_store=checkpoint_store,
+        checkpoint_reader=checkpoint_reader,
         eos_enabled=eos_active,
     )
 

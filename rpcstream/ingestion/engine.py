@@ -2,6 +2,7 @@ import json
 import asyncio
 from contextlib import suppress
 import time
+
 from rpcstream.client.models import RpcErrorResult
 from rpcstream.ingestion.dlq import (
     build_resolved_record,
@@ -14,12 +15,14 @@ from opentelemetry.trace import Status, StatusCode
 
 from rpcstream.metrics.engine import EngineMetrics
 from rpcstream.runtime.observability.context import ObservabilityContext
+from rpcstream.state.checkpoint import build_checkpoint_row
 
 class IngestionEngine:
     def __init__(
         self, 
         fetcher, 
         processors, 
+        enricher,
         sink, 
         topics, 
         dlq_topic=None,
@@ -31,11 +34,12 @@ class IngestionEngine:
         logger=None,
         observability: ObservabilityContext | None = None,
         checkpoint_manager=None,
-        checkpoint_store=None,
+        checkpoint_reader=None,
         eos_enabled=False,
     ):
         self.fetcher = fetcher
-        self.processors = processors # e.g. {"block": BlockProcessor(), "transaction": TransactionProcessor(), ...}
+        self.processors = processors
+        self.enricher = enricher
         self.sink = sink
         self.topics = topics
         if dlq_topic is None and dlq_topics is not None:
@@ -58,7 +62,7 @@ class IngestionEngine:
         self._tracer = self.observability.get_tracer(__name__)
         self.metrics = EngineMetrics(self.observability.get_meter("rpcstream.engine"))
         self.checkpoint_manager = checkpoint_manager
-        self.checkpoint_store = checkpoint_store
+        self.checkpoint_reader = checkpoint_reader
         self.eos_enabled = eos_enabled
         self._checkpoint_tasks = set()
 
@@ -168,10 +172,8 @@ class IngestionEngine:
         success = True
         delivery_futures = []
         transactional_topic_rows = []
+        parsed_bundle = {}
         try:
-            # =========================
-            # Span for the entire streaming process
-            # =========================
             with self._tracer.start_as_current_span("streaming.run") as root_span:
                 root_span.set_attribute("component", "engine")
                 root_span.set_attribute("block_number", block_number)
@@ -181,10 +183,8 @@ class IngestionEngine:
                 # 1. FETCH
                 raw_data = await self.fetcher.fetch(block_number)
 
-                # Process data for each entity
                 for entity, processor in self.processors.items():
                     current_entity = entity
-                    # HANDLE RPC FAILURE
                     if isinstance(raw_data[entity], RpcErrorResult):
                         error_msg = raw_data[entity].error
                         error_details = raw_data[entity].details.copy()
@@ -219,12 +219,13 @@ class IngestionEngine:
                         )
                         success = False
                         return False, delivery_futures
-                    
+
                     try:
                         value, meta = raw_data[entity]
                         processed_data = processor.process(block_number, value)
+                        for processed_entity, rows in processed_data.items():
+                            parsed_bundle.setdefault(processed_entity, []).extend(rows)
 
-                        # 3. LAG
                         latest_block, chain_lag, ingestion_lag = await self._compute_lag(block_number)
                         if chain_lag is not None:
                             self.metrics.CHAIN_LAG.record(chain_lag)
@@ -237,12 +238,7 @@ class IngestionEngine:
                         self.metrics.BLOCK_COUNTER.add(1, {"entity": entity})
                         self.metrics.BLOCK_LATENCY.record(latency, {"entity": entity})
                         self.metrics.QUEUE_WAIT.record(queue_wait, {"entity": entity})
-                        
-                        # 4. SINK
-                        topic = self.topics.get(entity)
-                        rows = processed_data[entity]
-                        
-                        self.metrics.ROW_COUNTER.add(len(rows), {"entity": entity})
+                        emitted_rows = sum(len(rows) for rows in processed_data.values())
                         if self.logger:
                             self.logger.info(
                                 "engine.processed",
@@ -250,25 +246,10 @@ class IngestionEngine:
                                 block=block_number,
                                 entity=entity,
                                 latency_ms=latency,
-                                payload=len(rows),
+                                payload=emitted_rows,
                                 ingestion_lag=ingestion_lag,
                                 chain_lag=chain_lag,
                             )
-
-                        if not topic:
-                            continue
-                        if self.eos_enabled:
-                            transactional_topic_rows.append((topic, rows))
-                        else:
-                            delivery_future = await self.sink.send(
-                                topic,
-                                rows,
-                                wait_delivery=self.checkpoint_manager is not None,
-                            )
-                            if delivery_future is not None:
-                                delivery_futures.append(delivery_future)
-                        
-                        
                     except Exception as e:
                         await self._send_dlq(
                             entity=entity,
@@ -283,9 +264,25 @@ class IngestionEngine:
                             },
                         )
                         success = False
-                            
+
+                if success:
+                    final_bundle = self.enricher.enrich(parsed_bundle) if self.enricher else parsed_bundle
+                    for entity, topic in self.topics.items():
+                        rows = final_bundle.get(entity, [])
+                        self.metrics.ROW_COUNTER.add(len(rows), {"entity": entity})
+                        if not rows:
+                            continue
+                        if self.eos_enabled:
+                            transactional_topic_rows.append((topic, rows))
+                        else:
+                            delivery_future = await self.sink.send(
+                                topic,
+                                rows,
+                                wait_delivery=self.checkpoint_manager is not None,
+                            )
+                            if delivery_future is not None:
+                                delivery_futures.append(delivery_future)
         except Exception as e:
-            # Handle failure in a new span
             with self._tracer.start_as_current_span("engine.error") as error_span:
                 error_span.set_status(Status(StatusCode.ERROR))
                 error_span.set_attribute("error.message", str(e))
@@ -303,7 +300,7 @@ class IngestionEngine:
                     block=block_number,
                     error=error_msg
                 )
-            
+
             await self._send_dlq(
                 entity=current_entity,
                 block_number=block_number,
@@ -314,28 +311,27 @@ class IngestionEngine:
                 context={},
             )
             success = False
-            
+
         finally:
             self.metrics.INFLIGHT.add(-1)
             total_ms = (time.time() - start_total) * 1000
             self.metrics.TOTAL_TIME.record(total_ms, {"entity": current_entity})
 
         if success and self.eos_enabled:
-            checkpoint_topic = None
-            checkpoint_key = None
-            checkpoint_value = None
-            if self.checkpoint_store is not None:
-                checkpoint_key, checkpoint_value = self.checkpoint_store.build_record(
-                    block_number,
-                    status="running",
+            if self.checkpoint_reader is not None:
+                transactional_topic_rows.append(
+                    (
+                        self.checkpoint_reader.topic,
+                        [
+                            build_checkpoint_row(
+                                self.checkpoint_reader.identity,
+                                block_number,
+                                status="running",
+                            )
+                        ],
+                    )
                 )
-                checkpoint_topic = self.checkpoint_store.topic
-            await self.sink.send_transaction(
-                transactional_topic_rows,
-                checkpoint_topic,
-                checkpoint_key,
-                checkpoint_value,
-            )
+            await self.sink.send_transaction(transactional_topic_rows)
         return success, delivery_futures
 
     async def _finalize_checkpoint(self, block_number, success, delivery_futures):
@@ -401,12 +397,7 @@ class IngestionEngine:
             )
 
         if self.eos_enabled:
-            await self.sink.send_transaction(
-                [(topic, [record])],
-                None,
-                None,
-                None,
-            )
+            await self.sink.send_transaction([(topic, [record])])
         else:
             await self.sink.send(topic, [record])
 
@@ -438,12 +429,7 @@ class IngestionEngine:
             return
         resolved_record = build_resolved_record(record)
         if self.eos_enabled:
-            await self.sink.send_transaction(
-                [(self.dlq_topic, [resolved_record])],
-                None,
-                None,
-                None,
-            )
+            await self.sink.send_transaction([(self.dlq_topic, [resolved_record])])
             return
         await self.sink.send(self.dlq_topic, [resolved_record])
             

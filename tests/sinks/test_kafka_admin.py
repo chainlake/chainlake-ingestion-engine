@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from rpcstream.sinks.kafka.admin import KafkaTopicManager
+from rpcstream.adapters.evm.identity.event_id_calculator import EventIdCalculator
 
 
 class _Future:
@@ -42,3 +43,35 @@ def test_ensure_log_append_time_updates_only_mismatched_topics():
 
     assert len(admin.incremental_updates) == 1
     assert admin.incremental_updates[0].name == "raw_topic"
+
+
+def test_event_id_calculator_uses_enriched_transaction_identity():
+    calculator = EventIdCalculator()
+
+    event_id = calculator.calculate_event_id(
+        {
+            "type": "transaction",
+            "block_hash": "0xabc",
+            "transaction_index": 50,
+        }
+    )
+
+    assert event_id == "enriched_transaction_0xabc_50"
+
+
+def test_ensure_compacted_topics_uses_compact_delete_policy():
+    manager = KafkaTopicManager(producer_config={})
+    captured = {}
+
+    manager._ensure_topics = lambda topics, config: captured.update(
+        {"topics": list(topics), "config": config}
+    )
+    manager._ensure_compaction = lambda topics: captured.update(
+        {"compaction_topics": list(topics)}
+    )
+
+    manager.ensure_compacted_topics(["checkpoint-topic"])
+
+    assert captured["topics"] == ["checkpoint-topic"]
+    assert captured["compaction_topics"] == ["checkpoint-topic"]
+    assert captured["config"]["cleanup.policy"] == "compact,delete"

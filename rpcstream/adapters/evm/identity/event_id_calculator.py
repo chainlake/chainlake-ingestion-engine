@@ -19,6 +19,11 @@ class EventIdCalculator:
         # TRANSACTION
         # ------------------------
         elif item_type == "transaction":
+            block_hash = item.get("block_hash")
+            transaction_index = item.get("transaction_index")
+            if block_hash is not None and transaction_index is not None:
+                return concat("enriched_transaction", block_hash, transaction_index)
+
             tx_hash = item.get("hash")
             if tx_hash:
                 return concat("transaction", tx_hash)
